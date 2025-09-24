@@ -2,11 +2,16 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.colors
 import numpy as np
 from datetime import datetime, timedelta
 import random
 import warnings
+import requests
+import json
+import re
+from typing import Dict, List, Tuple, Optional
+import sqlite3
+import statistics
 warnings.filterwarnings('ignore')
 
 # Configuration page
@@ -45,11 +50,11 @@ with st.sidebar:
     st.markdown("✅ Auto Data Analysis") 
     st.markdown("✅ Custom Chart Builder")
     st.markdown("✅ Smart Visualizations")
-    st.markdown("🔄 AI Chat (Coming Soon)")
+    st.markdown("✅ AI Chat")
     st.markdown("🧠 Memory System (Coming Soon)")
     
     st.markdown("---")
-    st.markdown("### 📊 Current Data Status")
+    st.markdown("### 🤖 AI Assistant Status")
     
     if st.session_state.processed_data is not None:
         st.metric("Files Processed", st.session_state.upload_count)
@@ -63,6 +68,9 @@ with st.sidebar:
             st.success("✅ Data Cleaned")
     else:
         st.metric("Files Processed", st.session_state.upload_count)
+
+
+
 
 def generate_ecommerce_data():
     """Génère données e-commerce"""
@@ -250,8 +258,6 @@ def generate_moderately_dirty_dataset():
     
     return df
 
-# MODIFICATION DE LA SECTION GÉNÉRATION dans votre interface principale
-# Trouvez cette section dans votre main.py et remplacez par:
 
 def display_sample_data_generation():
     """Interface améliorée avec datasets de test nettoyage"""
@@ -1288,7 +1294,7 @@ def display_before_after_comparison(original_df, cleaned_df):
         st.download_button(
             label="📥 Download Cleaned Data (CSV)",
             data=csv_cleaned,
-            file_name=f"cleaned_data.csv",
+            file_name=f"cleaned_data_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
             mime="text/csv",
             use_container_width=True
         )
@@ -1343,12 +1349,464 @@ def process_data(df, source_name):
     return df
 
 
+# SYSTÈME LLM LOCAL INTÉGRÉ - À AJOUTER dans main.py
 
-# MODIFICATION DE LA FONCTION display_data_analysis dans votre main.py
-# Remplacez la section des TABS par cette version avec l'onglet Data Cleaning
+import json
+import sqlite3
+from datetime import datetime
+from typing import Dict, List, Optional
+import pandas as pd
+import numpy as np
+
+# Installation automatique des dépendances LLM
+def install_llm_dependencies():
+    """Installe les dépendances LLM automatiquement"""
+    try:
+        import subprocess
+        import sys
+        
+        # Installation Hugging Face Transformers (plus fiable que GPT4All)
+        packages = [
+            'transformers>=4.35.0',
+            'torch>=2.0.0',
+            'accelerate>=0.24.0',
+            'sentencepiece>=0.1.99'
+        ]
+        
+        for package in packages:
+            try:
+                __import__(package.split('>=')[0])
+            except ImportError:
+                st.info(f"📦 Installation de {package.split('>=')[0]}... (première utilisation)")
+                subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+        
+        return True
+    except Exception as e:
+        st.error(f"Erreur installation: {e}")
+        return False
+
+class LocalLLMChat:
+    def __init__(self, df=None):
+        self.df = df
+        self.model = None
+        self.tokenizer = None
+        self.conversation_history = []
+        self.model_loaded = False
+        self.init_chat_memory()
+        
+    def init_chat_memory(self):
+        """Initialise base de données mémoire"""
+        self.chat_conn = sqlite3.connect('llm_chat_memory.db', check_same_thread=False)
+        cursor = self.chat_conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS llm_conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME,
+                user_message TEXT,
+                llm_response TEXT,
+                data_context TEXT,
+                reasoning_used BOOLEAN
+            )
+        ''')
+        self.chat_conn.commit()
+    
+    def load_model(self, model_choice="microsoft/DialoGPT-medium"):
+        """Charge le modèle LLM local"""
+        if self.model_loaded:
+            return True
+        
+        try:
+            # Installation des dépendances si nécessaire
+            if not install_llm_dependencies():
+                return False
+            
+            from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+            
+            with st.spinner("🤖 Chargement du modèle IA... (peut prendre 1-2 minutes)"):
+                
+                # Modèles disponibles par ordre de préférence
+                models = {
+                    "microsoft/DialoGPT-medium": "Conversationnel équilibré (500MB)",
+                    "microsoft/DialoGPT-small": "Léger et rapide (100MB)", 
+                    "distilbert/distilgpt2": "Ultra-léger (80MB)",
+                    "gpt2": "Classique OpenAI GPT-2 (500MB)"
+                }
+                
+                try:
+                    # Chargement du modèle sélectionné
+                    self.tokenizer = AutoTokenizer.from_pretrained(model_choice, padding_side='left')
+                    self.model = AutoModelForCausalLM.from_pretrained(
+                        model_choice,
+                        pad_token_id=self.tokenizer.eos_token_id,
+                        torch_dtype="auto"
+                    )
+                    
+                    # Configuration pour la génération
+                    if self.tokenizer.pad_token is None:
+                        self.tokenizer.pad_token = self.tokenizer.eos_token
+                    
+                    self.model_loaded = True
+                    st.success(f"✅ Modèle {model_choice} chargé avec succès!")
+                    return True
+                    
+                except Exception as model_error:
+                    st.warning(f"⚠️ Erreur chargement {model_choice}: {model_error}")
+                    # Fallback vers modèle plus simple
+                    try:
+                        self.tokenizer = AutoTokenizer.from_pretrained("distilbert/distilgpt2")
+                        self.model = AutoModelForCausalLM.from_pretrained("distilbert/distilgpt2")
+                        if self.tokenizer.pad_token is None:
+                            self.tokenizer.pad_token = self.tokenizer.eos_token
+                        self.model_loaded = True
+                        st.success("✅ Modèle fallback chargé!")
+                        return True
+                    except:
+                        return False
+        
+        except Exception as e:
+            st.error(f"❌ Impossible de charger le modèle: {e}")
+            return False
+    
+    def analyze_data_for_context(self) -> str:
+        """Analyse les données pour créer contexte intelligent"""
+        if self.df is None:
+            return "Aucune donnée disponible."
+        
+        context = []
+        
+        # Informations de base
+        context.append(f"Dataset: {len(self.df)} lignes, {len(self.df.columns)} colonnes")
+        
+        # Colonnes et types
+        numeric_cols = self.df.select_dtypes(include=[np.number]).columns.tolist()
+        categorical_cols = self.df.select_dtypes(include=['object']).columns.tolist()
+        date_cols = [col for col in self.df.columns if 'date' in col.lower() or self.df[col].dtype == 'datetime64[ns]']
+        
+        if numeric_cols:
+            context.append(f"Colonnes numériques: {', '.join(numeric_cols[:5])}")
+            # Statistiques clés pour colonnes principales
+            for col in numeric_cols[:3]:
+                mean_val = self.df[col].mean()
+                min_val = self.df[col].min()
+                max_val = self.df[col].max()
+                context.append(f"{col}: moyenne {mean_val:.1f}, range {min_val:.1f}-{max_val:.1f}")
+        
+        if categorical_cols:
+            context.append(f"Colonnes catégorielles: {', '.join(categorical_cols[:3])}")
+            # Valeurs uniques pour catégories principales
+            for col in categorical_cols[:2]:
+                unique_vals = self.df[col].nunique()
+                top_values = self.df[col].value_counts().head(3).index.tolist()
+                context.append(f"{col}: {unique_vals} valeurs uniques, top: {', '.join(map(str, top_values))}")
+        
+        if date_cols:
+            context.append(f"Période temporelle: {date_cols[0]} disponible")
+        
+        # Qualité des données
+        missing_total = self.df.isnull().sum().sum()
+        if missing_total > 0:
+            context.append(f"Données manquantes: {missing_total} valeurs")
+        
+        return " | ".join(context)
+    
+    def calculate_specific_insight(self, question: str) -> str:
+        """Calcule des insights spécifiques selon la question"""
+        if self.df is None:
+            return ""
+        
+        question_lower = question.lower()
+        calculations = []
+        
+        try:
+            # Détection mots-clés et calculs correspondants
+            if any(word in question_lower for word in ['moyenne', 'mean', 'average']):
+                numeric_cols = self.df.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) > 0:
+                    for col in numeric_cols[:2]:
+                        avg = self.df[col].mean()
+                        calculations.append(f"Moyenne {col}: {avg:.2f}")
+            
+            if any(word in question_lower for word in ['corrélation', 'correlation', 'relation']):
+                numeric_cols = self.df.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) >= 2:
+                    corr_val = self.df[numeric_cols[0]].corr(self.df[numeric_cols[1]])
+                    calculations.append(f"Corrélation {numeric_cols[0]}-{numeric_cols[1]}: {corr_val:.2f}")
+            
+            if any(word in question_lower for word in ['tendance', 'trend', 'évolution']):
+                numeric_cols = self.df.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) > 0:
+                    col = numeric_cols[0]
+                    first_half = self.df[col][:len(self.df)//2].mean()
+                    second_half = self.df[col][len(self.df)//2:].mean()
+                    trend = ((second_half - first_half) / first_half * 100) if first_half != 0 else 0
+                    direction = "hausse" if trend > 0 else "baisse"
+                    calculations.append(f"Tendance {col}: {direction} de {abs(trend):.1f}%")
+            
+            if any(word in question_lower for word in ['maximum', 'max', 'minimum', 'min']):
+                numeric_cols = self.df.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) > 0:
+                    col = numeric_cols[0]
+                    max_val = self.df[col].max()
+                    min_val = self.df[col].min()
+                    calculations.append(f"Range {col}: min {min_val:.1f}, max {max_val:.1f}")
+        
+        except Exception as e:
+            calculations.append(f"Erreur calcul: {e}")
+        
+        return " | ".join(calculations) if calculations else ""
+    
+    def generate_response(self, user_message: str) -> str:
+        """Génère réponse avec le LLM local + calculs"""
+        if not self.model_loaded:
+            return "❌ Modèle IA non chargé. Utilisez 'Charger Modèle IA' d'abord."
+        
+        try:
+            # Contexte des données
+            data_context = self.analyze_data_for_context()
+            specific_calculations = self.calculate_specific_insight(user_message)
+            
+            # Construction du prompt enrichi
+            system_prompt = f"""Tu es un assistant IA expert en analyse de données. Tu réponds en français de manière claire et précise.
+
+CONTEXTE DES DONNÉES:
+{data_context}
+
+CALCULS SPÉCIFIQUES:
+{specific_calculations}
+
+QUESTION UTILISATEUR: {user_message}
+
+Réponds de manière conversationnelle en utilisant les informations ci-dessus. Si tu mentionnes des chiffres, utilise ceux fournis dans le contexte. Sois concis mais informatif."""
+
+            # Tokenisation
+            inputs = self.tokenizer.encode(system_prompt, return_tensors='pt', max_length=512, truncation=True)
+            
+            # Génération avec paramètres optimisés
+            with st.spinner("🤖 Génération de la réponse..."):
+                outputs = self.model.generate(
+                    inputs,
+                    max_new_tokens=150,  # Réponses concises
+                    num_return_sequences=1,
+                    temperature=0.7,     # Créativité modérée
+                    do_sample=True,
+                    top_p=0.9,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    repetition_penalty=1.2
+                )
+            
+            # Décodage et nettoyage
+            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            
+            # Extraction de la réponse (après le prompt)
+            response_part = response[len(system_prompt):].strip()
+            
+            # Nettoyage et amélioration
+            if len(response_part) < 10:  # Réponse trop courte
+                response_part = self.create_fallback_response(user_message, specific_calculations)
+            
+            # Sauvegarde en mémoire
+            self.save_conversation(user_message, response_part, data_context)
+            
+            return response_part
+            
+        except Exception as e:
+            return f"❌ Erreur génération: {e}\n\n🔧 Réponse basique: {self.create_fallback_response(user_message, specific_calculations)}"
+    
+    def create_fallback_response(self, question: str, calculations: str) -> str:
+        """Crée réponse de fallback intelligente"""
+        if calculations:
+            return f"📊 Basé sur vos données: {calculations}\n\n💡 Ces résultats peuvent vous aider à répondre à votre question sur {question}."
+        else:
+            return f"🤖 Je comprends votre question sur '{question}'. Avec les données disponibles ({self.analyze_data_for_context()}), je peux vous aider à analyser ces informations plus spécifiquement."
+    
+    def save_conversation(self, user_message: str, llm_response: str, data_context: str):
+        """Sauvegarde conversation"""
+        cursor = self.chat_conn.cursor()
+        cursor.execute('''
+            INSERT INTO llm_conversations (timestamp, user_message, llm_response, data_context, reasoning_used)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (datetime.now(), user_message, llm_response, data_context, True))
+        self.chat_conn.commit()
+    
+    def get_conversation_history(self, limit: int = 5) -> List[Dict]:
+        """Récupère historique"""
+        cursor = self.chat_conn.cursor()
+        cursor.execute('''
+            SELECT timestamp, user_message, llm_response
+            FROM llm_conversations 
+            ORDER BY timestamp DESC 
+            LIMIT ?
+        ''', (limit,))
+        
+        results = cursor.fetchall()
+        return [{
+            'timestamp': row[0],
+            'user': row[1],
+            'llm': row[2]
+        } for row in results]
+
+def display_llm_chat_interface(df):
+    """Interface chat avec LLM local intégré"""
+    st.subheader("🤖 Local AI Chat - Reasoning & Analysis")
+    st.markdown("**Chat with a local AI model that can reason about your data**")
+    
+    # Initialisation système LLM
+    if 'llm_chat_system' not in st.session_state:
+        st.session_state.llm_chat_system = LocalLLMChat(df)
+    else:
+        # Mise à jour DataFrame
+        st.session_state.llm_chat_system.df = df
+    
+    llm_chat = st.session_state.llm_chat_system
+    
+    # Section de contrôle du modèle
+    with st.expander("🔧 AI Model Controls", expanded=not llm_chat.model_loaded):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if not llm_chat.model_loaded:
+                st.markdown("**🚀 Load AI Model**")
+                model_choice = st.selectbox(
+                    "Choose Model Size:",
+                    [
+                        "microsoft/DialoGPT-small",
+                        "microsoft/DialoGPT-medium", 
+                        "distilbert/distilgpt2"
+                    ],
+                    help="Small = Fast, Medium = Better quality"
+                )
+                
+                if st.button("📥 Load AI Model", type="primary"):
+                    success = llm_chat.load_model(model_choice)
+                    if success:
+                        st.rerun()
+            else:
+                st.success("✅ **AI Model Loaded & Ready**")
+                st.info("🤖 You can now have intelligent conversations about your data!")
+                
+                if st.button("🔄 Reload Model"):
+                    llm_chat.model_loaded = False
+                    llm_chat.model = None
+                    llm_chat.tokenizer = None
+                    st.rerun()
+        
+        with col2:
+            st.markdown("**📊 Current Data Context**")
+            if df is not None:
+                context_preview = llm_chat.analyze_data_for_context()
+                st.text_area("Data Context:", context_preview, height=100, disabled=True)
+            else:
+                st.warning("No data loaded")
+    
+    # Interface de chat principale
+    if llm_chat.model_loaded:
+        st.markdown("---")
+        
+        # Historique des conversations
+        if 'llm_chat_history' not in st.session_state:
+            st.session_state.llm_chat_history = []
+        
+        # Affichage historique
+        if st.session_state.llm_chat_history:
+            st.markdown("### 💬 Conversation")
+            
+            for chat in st.session_state.llm_chat_history[-3:]:  # 3 dernières
+                # Message utilisateur
+                st.markdown(f"**🙋‍♂️ You:** {chat['user']}")
+                
+                # Réponse IA
+                st.markdown(f"**🤖 AI:** {chat['llm']}")
+                
+                st.markdown("---")
+        
+        # Zone input
+        user_input = st.text_area(
+            "💬 Chat with AI about your data:",
+            placeholder="Ask me anything about your data... e.g., 'What patterns do you see in the sales data?' or 'Can you reason about the correlation between price and quantity?'",
+            height=80,
+            key="llm_user_input"
+        )
+        
+        # Suggestions de questions intelligentes
+        if df is not None:
+            st.markdown("**💡 Suggested Questions:**")
+            suggestions = [
+                "What insights can you find in this data?",
+                "Explain the relationship between the main variables",
+                "What trends or patterns do you notice?",
+                "Can you reason about potential business implications?",
+                "What recommendations would you make based on this data?"
+            ]
+            
+            cols = st.columns(len(suggestions))
+            for i, suggestion in enumerate(suggestions):
+                with cols[i]:
+                    if st.button(f"💡 {suggestion[:20]}...", key=f"suggestion_llm_{i}"):
+                        st.session_state.suggested_llm_question = suggestion
+                        st.rerun()
+        
+        # Traitement de la question
+        if st.button("🚀 Send to AI", type="primary") and user_input:
+            if df is None:
+                st.error("❌ Please load data first (upload file or generate sample data)")
+            else:
+                with st.spinner("🤖 AI is thinking and reasoning..."):
+                    # Génération réponse IA
+                    ai_response = llm_chat.generate_response(user_input)
+                
+                # Ajout à l'historique
+                chat_entry = {
+                    'user': user_input,
+                    'llm': ai_response,
+                    'timestamp': datetime.now()
+                }
+                
+                st.session_state.llm_chat_history.append(chat_entry)
+                
+                # Effacer input
+                st.rerun()
+        
+        # Bouton suggestion automatique
+        if st.session_state.get('suggested_llm_question'):
+            st.text_area("Selected Question:", st.session_state.suggested_llm_question, height=60, key="selected_q")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🚀 Send This Question", type="primary"):
+                    ai_response = llm_chat.generate_response(st.session_state.suggested_llm_question)
+                    chat_entry = {
+                        'user': st.session_state.suggested_llm_question,
+                        'llm': ai_response,
+                        'timestamp': datetime.now()
+                    }
+                    st.session_state.llm_chat_history.append(chat_entry)
+                    del st.session_state.suggested_llm_question
+                    st.rerun()
+            with col2:
+                if st.button("❌ Clear"):
+                    del st.session_state.suggested_llm_question
+                    st.rerun()
+    
+    else:
+        st.info("👆 **Load an AI model above to start intelligent conversations about your data**")
+        
+        st.markdown("### 🎯 What you can do with Local AI:")
+        st.markdown("""
+        - **🧠 Deep reasoning** about your data patterns
+        - **💡 Business insights** and recommendations  
+        - **🔍 Complex analysis** with natural language
+        - **🗨️ Natural conversations** about statistics and trends
+        - **🔒 Complete privacy** - everything runs locally
+        - **💰 Zero API costs** - no external dependencies
+        """)
+    
+    # Status dans sidebar
+    if 'sidebar_llm_status' not in st.session_state:
+        st.session_state.sidebar_llm_status = llm_chat.model_loaded
+
 
 def display_data_analysis(df):
-    """Affiche l'analyse complète des données avec nettoyage"""
+    """Affiche l'analyse complète des données avec chat IA"""
     
     # Success message avec info
     st.success(f"✅ Data processed: **{len(df)} rows** and **{len(df.columns)} columns**")
@@ -1394,76 +1852,27 @@ def display_data_analysis(df):
     col_info_df = pd.DataFrame(col_info)
     st.dataframe(col_info_df, use_container_width=True)
     
-     # Insights intelligents (reste identique)
+    # TABS AVEC CHAT IA AJOUTÉ
     st.markdown("---")
-    st.subheader("4. 🧠 Smart Insights")
+    st.subheader("4. 📊 Data Analysis & AI Assistant")
     
-    # Utiliser données nettoyées pour insights si disponibles
-    insight_df = st.session_state.get('cleaned_data', df) if st.session_state.get('cleaning_applied', False) else df
-    numeric_cols = insight_df.select_dtypes(include=[np.number]).columns
-    
-    insights = []
-    
-    # Complétude des données
-    completeness = (1 - insight_df.isnull().sum().sum() / (len(insight_df) * len(insight_df.columns))) * 100
-    insights.append(f"📊 Data is **{completeness:.1f}% complete** - {'Excellent!' if completeness > 95 else 'Good!' if completeness > 80 else 'Consider cleaning missing values'}")
-    
-    # Message si données nettoyées utilisées
-    if st.session_state.get('cleaning_applied', False):
-        insights.append("✨ **Using cleaned data** - Insights based on optimized dataset")
-    
-    # Analyse colonnes numériques
-    if len(numeric_cols) > 0:
-        high_variance_cols = []
-        for col in numeric_cols:
-            cv = insight_df[col].std() / insight_df[col].mean() if insight_df[col].mean() != 0 else 0
-            if cv > 1:
-                high_variance_cols.append(col)
-        
-        if high_variance_cols:
-            insights.append(f"📈 High variability in: **{', '.join(high_variance_cols)}** - Great for analysis!")
-    
-    # Analyse catégorielle
-    categorical_cols = insight_df.select_dtypes(include=['object']).columns
-    if len(categorical_cols) > 0:
-        high_cardinality = []
-        for col in categorical_cols:
-            if insight_df[col].nunique() > len(insight_df) * 0.8:
-                high_cardinality.append(col)
-        
-        if high_cardinality:
-            insights.append(f"🏷️ High cardinality in: **{', '.join(high_cardinality)}** - Consider grouping")
-    
-    # Potentiel temporel
-    date_columns = []
-    for col in insight_df.columns:
-        if 'date' in col.lower() or 'time' in col.lower() or insight_df[col].dtype == 'datetime64[ns]':
-            date_columns.append(col)
-    
-    if date_columns:
-        insights.append(f"📅 Time series potential with **{date_columns[0]}** - Perfect for trend analysis!")
-    
-    # Affichage insights
-    for insight in insights:
-        st.markdown(f"- {insight}")
-
-    # TABS AVEC DATA CLEANING
-    st.markdown("---")
-    st.subheader("5. 📊 Data Analysis & Processing")
-    
-    # Tabs avec Data Cleaning ajouté
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🧹 Data Cleaning", "🤖 Auto Charts", "🎨 Custom Builder","💡 Suggestions", "🖼️ Gallery"])
+    # Tabs avec Chat IA ajouté (6 onglets maintenant)
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "🧹 Data Cleaning", 
+        "🤖 Auto Charts", 
+        "🎨 Custom Builder", 
+        "🖼️ Gallery", 
+        "💡 Suggestions", 
+        "🤖 AI Chat"  # NOUVEAU TAB
+    ])
     
     with tab1:
-        # Section Data Cleaning
+        # Section Data Cleaning (code existant)
         st.markdown("**Clean and optimize your data for better analysis**")
         
-        # Vérifier si on a déjà des données nettoyées
         if st.session_state.get('cleaning_applied', False) and st.session_state.get('cleaned_data') is not None:
-            # Afficher comparaison avant/après
             display_before_after_comparison(st.session_state.get('original_data', df), st.session_state.get('cleaned_data'))
             
-            # Option pour recommencer le nettoyage
             if st.button("🔄 Start New Cleaning Process"):
                 st.session_state.cleaning_applied = False
                 st.session_state.cleaned_data = None
@@ -1471,15 +1880,11 @@ def display_data_analysis(df):
         
         else:
             # Processus de nettoyage normal
-            
-            # Analyse automatique de la qualité
             with st.spinner("🔍 Analyzing data quality..."):
                 quality_report = analyze_data_quality(df)
             
-            # Affichage du rapport de qualité
             display_quality_report(df, quality_report)
             
-            # Actions de nettoyage si nécessaire
             if quality_report['total_issues'] > 0:
                 st.markdown("---")
                 cleaned_df = display_cleaning_actions(df, quality_report)
@@ -1487,7 +1892,6 @@ def display_data_analysis(df):
                 st.markdown("---")
                 st.success("🎉 **Great!** Your data is already clean and ready for analysis.")
                 
-                # Bouton pour forcer l'analyse si l'utilisateur veut voir les détails
                 if st.button("🔍 Show Detailed Analysis Anyway"):
                     st.info("Even clean data can benefit from optimization. Here are some advanced options:")
                     display_cleaning_actions(df, quality_report)
@@ -1596,31 +2000,174 @@ def display_data_analysis(df):
         analysis_df = st.session_state.get('cleaned_data', df) if st.session_state.get('cleaning_applied', False) else df
         display_chart_builder(analysis_df)
     
-    with tab5:
+    with tab4:
         # Gallery avec données nettoyées  
         analysis_df = st.session_state.get('cleaned_data', df) if st.session_state.get('cleaning_applied', False) else df
         display_chart_gallery(analysis_df)
     
-    with tab4:
+    with tab5:
         # Suggestions avec données nettoyées
         analysis_df = st.session_state.get('cleaned_data', df) if st.session_state.get('cleaning_applied', False) else df
         suggest_chart_ideas(analysis_df)
     
-   
-    
-    # Next steps (reste identique mais avec mention nettoyage)
-    st.markdown("---")
-    st.subheader("6. 🤖 AI Chat")
-    
-    
-    st.markdown("---")
-    st.subheader("7. Generate PDF reports")
+    with tab6:
+         st.markdown("**Intelligent AI reasoning about your data**")
+        display_llm_chat_interface(chat_df)
 
-    # Note sur données nettoyées
+    
+    # Insights intelligents (reste identique mais avec mention chat)
+    st.markdown("---")
+    st.subheader("5. 🧠 Smart Insights")
+    
+    # Utiliser données nettoyées pour insights si disponibles
+    insight_df = st.session_state.get('cleaned_data', df) if st.session_state.get('cleaning_applied', False) else df
+    numeric_cols = insight_df.select_dtypes(include=[np.number]).columns
+    
+    insights = []
+    
+    # Complétude des données
+    completeness = (1 - insight_df.isnull().sum().sum() / (len(insight_df) * len(insight_df.columns))) * 100
+    insights.append(f"📊 Data is **{completeness:.1f}% complete** - {'Excellent!' if completeness > 95 else 'Good!' if completeness > 80 else 'Consider cleaning missing values'}")
+    
+    # Message si données nettoyées utilisées
     if st.session_state.get('cleaning_applied', False):
-        st.success("✅ **Note:** All visualizations and insights are now using your cleaned data for better accuracy!")
+        insights.append("✨ **Using cleaned data** - Insights based on optimized dataset")
+    
+    # Nouvelle suggestion pour chat IA
+    insights.append("🤖 **Try the AI Chat** - Ask questions like 'What's the average sales?' or 'Show me correlations'")
+    
+    # Analyse colonnes numériques
+    if len(numeric_cols) > 0:
+        high_variance_cols = []
+        for col in numeric_cols:
+            cv = insight_df[col].std() / insight_df[col].mean() if insight_df[col].mean() != 0 else 0
+            if cv > 1:
+                high_variance_cols.append(col)
+        
+        if high_variance_cols:
+            insights.append(f"📈 High variability in: **{', '.join(high_variance_cols)}** - Great for analysis!")
+    
+    # Analyse catégorielle
+    categorical_cols = insight_df.select_dtypes(include=['object']).columns
+    if len(categorical_cols) > 0:
+        high_cardinality = []
+        for col in categorical_cols:
+            if insight_df[col].nunique() > len(insight_df) * 0.8:
+                high_cardinality.append(col)
+        
+        if high_cardinality:
+            insights.append(f"🏷️ High cardinality in: **{', '.join(high_cardinality)}** - Consider grouping")
+    
+    # Potentiel temporel
+    date_columns = []
+    for col in insight_df.columns:
+        if 'date' in col.lower() or 'time' in col.lower() or insight_df[col].dtype == 'datetime64[ns]':
+            date_columns.append(col)
+    
+    if date_columns:
+        insights.append(f"📅 Time series potential with **{date_columns[0]}** - Perfect for trend analysis!")
+    
+    # Affichage insights
+    for insight in insights:
+        st.markdown(f"- {insight}")
+    
+    # Next steps mis à jour avec chat
+    st.markdown("---")
+    st.subheader("6. 🚀 Next Steps")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("**🤖 AI Chat**")
+        st.success("✅ Available now!")
+        if st.button("💬 Go to Chat", key="goto_chat_btn"):
+            st.info("👆 Click on the '🤖 AI Chat' tab above to start chatting!")
+    
+    with col2:
+        st.markdown("**📊 Create Charts**") 
+        st.success("✅ Available now!")
+        if st.button("🎨 Go to Builder", key="goto_builder_btn"):
+            st.info("👆 Use the '🎨 Custom Builder' tab above!")
+    
+    with col3:
+        st.markdown("**📄 Export Report**")
+        st.info("Coming in next version")
+        st.button("Soon!", disabled=True, key="export_btn")
+    
+    # Note sur données nettoyées et chat IA
+    if st.session_state.get('cleaning_applied', False):
+        st.success("✅ **Note:** All analysis, visualizations and AI Chat are using your cleaned data for maximum accuracy!")
+    else:
+        st.info("💡 **Tip:** Try the Data Cleaning tab first, then use AI Chat to explore your optimized data!")
 
-# AJOUT DANS LA SECTION SIDEBAR (trouvez cette section dans votre main.py et modifiez)
+# MODIFICATION SIDEBAR pour inclure Chat IA
+# Trouvez votre section sidebar et mettez à jour la liste des features
+
+def update_sidebar_with_chat():
+    """Met à jour la sidebar avec chat IA"""
+    with st.sidebar:
+        st.markdown("### 🚀 Features")
+        st.markdown("✅ Excel & CSV Upload")
+        st.markdown("✅ Data Cleaning System")
+        st.markdown("✅ Sample Data Generator") 
+        st.markdown("✅ Auto Data Analysis") 
+        st.markdown("✅ Custom Chart Builder")
+        st.markdown("✅ Smart Visualizations")
+        st.markdown("✅ **AI Chat Assistant**")  # NOUVEAU - mis en évidence
+        st.markdown("🔄 Memory System (Coming Soon)")
+        
+        st.markdown("---")
+        st.markdown("### 🤖 AI Assistant Status")
+        
+        # Détection Ollama pour info sidebar
+        try:
+            import requests
+            response = requests.get('http://localhost:11434/api/tags', timeout=1)
+            ollama_status = response.status_code == 200
+        except:
+            ollama_status = False
+            
+        if ollama_status:
+            st.success("🚀 Conversational Mode Available")
+            st.markdown("*Ollama detected - Full AI chat enabled*")
+        else:
+            st.info("🧠 Smart Mode Active") 
+            st.markdown("*Install Ollama for conversational mode*")
+        
+        st.markdown("---")
+        st.markdown("### 📊 Current Data Status")
+        
+        if st.session_state.processed_data is not None:
+            st.metric("Files Processed", st.session_state.upload_count)
+            st.info(f"Source: {st.session_state.data_source}")
+            st.metric("Rows", len(st.session_state.processed_data))
+            st.metric("Columns", len(st.session_state.processed_data.columns))
+            
+            # Statut nettoyage
+            if st.session_state.get('cleaning_applied', False):
+                st.markdown("### 🧹 Cleaning Status")
+                st.success("✅ Data Cleaned")
+                
+            # Statut chat
+            if 'chat_history' in st.session_state and st.session_state.chat_history:
+                st.markdown("### 💬 Chat Activity")
+                st.metric("Questions Asked", len(st.session_state.chat_history))
+                st.caption(f"Last: {st.session_state.chat_history[-1]['timestamp'].strftime('%H:%M')}")
+        else:
+            st.metric("Files Processed", st.session_state.upload_count)
+            
+# FONCTION D'INITIALISATION POUR LE CHAT
+# Ajoutez ceci dans votre fonction main() au début
+
+def initialize_chat_session_state():
+    """Initialise les variables session pour le chat"""
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    if 'chat_system' not in st.session_state:
+        st.session_state.chat_system = None
+    if 'chat_mode' not in st.session_state:
+        st.session_state.chat_mode = "🔄 Hybrid (Best of Both)"
+
 def update_sidebar_info():
     """Met à jour les infos sidebar avec statut nettoyage"""
     with st.sidebar:
@@ -1668,7 +2215,7 @@ def update_sidebar_info():
         else:
             st.metric("Files Processed", st.session_state.upload_count)
 
-# INITIALISATION SESSION STATE (ajoutez au début de votre main() function)
+
 def initialize_cleaning_session_state():
     """Initialise les variables session pour le nettoyage"""
     if 'cleaned_data' not in st.session_state:
@@ -1679,6 +2226,592 @@ def initialize_cleaning_session_state():
         st.session_state.cleaning_applied = False
     if 'preview_cleaning' not in st.session_state:
         st.session_state.preview_cleaning = False
+
+
+class HybridChatSystem:
+    def __init__(self, df=None):
+        self.df = df
+        self.conversation_history = []
+        self.init_chat_memory()
+        
+    def init_chat_memory(self):
+        """Initialise base de données pour mémoire chat"""
+        self.chat_conn = sqlite3.connect('chat_memory.db', check_same_thread=False)
+        cursor = self.chat_conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chat_conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME,
+                user_question TEXT,
+                bot_response TEXT,
+                response_type TEXT,
+                data_context TEXT
+            )
+        ''')
+        self.chat_conn.commit()
+    
+    def detect_ollama_availability(self) -> bool:
+        """Vérifie si Ollama est disponible localement"""
+        try:
+            response = requests.get('http://localhost:11434/api/tags', timeout=2)
+            return response.status_code == 200
+        except:
+            return False
+    
+    def analyze_question_pattern(self, question: str) -> Dict:
+        """Analyse le pattern de la question pour déterminer le type de réponse"""
+        question_lower = question.lower()
+        
+        patterns = {
+            'statistics': ['moyenne', 'mean', 'average', 'total', 'sum', 'max', 'min', 'médiane', 'median'],
+            'trends': ['tendance', 'trend', 'évolution', 'evolution', 'croissance', 'growth', 'baisse', 'decrease'],
+            'correlation': ['corrélation', 'correlation', 'relation', 'lien', 'link'],
+            'distribution': ['distribution', 'répartition', 'spread', 'outlier', 'aberrant'],
+            'comparison': ['compare', 'comparer', 'différence', 'difference', 'versus', 'vs'],
+            'visualization': ['graphique', 'chart', 'plot', 'visualisation', 'graph'],
+            'insights': ['insight', 'analyse', 'analysis', 'pattern', 'découverte']
+        }
+        
+        detected_patterns = []
+        for pattern_type, keywords in patterns.items():
+            if any(keyword in question_lower for keyword in keywords):
+                detected_patterns.append(pattern_type)
+        
+        # Détection des colonnes mentionnées
+        mentioned_columns = []
+        if self.df is not None:
+            for col in self.df.columns:
+                if col.lower() in question_lower:
+                    mentioned_columns.append(col)
+        
+        return {
+            'patterns': detected_patterns,
+            'columns': mentioned_columns,
+            'complexity': 'simple' if len(detected_patterns) <= 1 else 'complex',
+            'requires_calculation': any(p in detected_patterns for p in ['statistics', 'trends', 'correlation'])
+        }
+    
+    def intelligent_response(self, question: str) -> Dict:
+        """Génère réponse intelligente basée sur analyse des données"""
+        if self.df is None:
+            return {
+                'response': "❌ Aucune donnée chargée. Veuillez d'abord uploader un fichier ou générer des données d'exemple.",
+                'type': 'error',
+                'suggestions': ['Upload Excel/CSV', 'Generate sample data']
+            }
+        
+        analysis = self.analyze_question_pattern(question)
+        
+        # Réponses pour statistiques de base
+        if 'statistics' in analysis['patterns']:
+            return self.generate_statistics_response(question, analysis)
+        
+        # Réponses pour tendances
+        elif 'trends' in analysis['patterns']:
+            return self.generate_trends_response(question, analysis)
+        
+        # Réponses pour corrélations
+        elif 'correlation' in analysis['patterns']:
+            return self.generate_correlation_response(question, analysis)
+        
+        # Réponses pour visualisations
+        elif 'visualization' in analysis['patterns']:
+            return self.generate_visualization_response(question, analysis)
+        
+        # Réponse générale pour questions complexes
+        else:
+            return self.generate_general_response(question, analysis)
+    
+    def generate_statistics_response(self, question: str, analysis: Dict) -> Dict:
+        """Génère réponse pour questions statistiques"""
+        numeric_cols = self.df.select_dtypes(include=['number']).columns
+        
+        if not analysis['columns'] and len(numeric_cols) > 0:
+            # Utilise première colonne numérique si pas spécifié
+            target_col = numeric_cols[0]
+        elif analysis['columns']:
+            target_col = analysis['columns'][0]
+        else:
+            return {'response': "❌ Aucune colonne numérique trouvée pour calculer les statistiques.", 'type': 'error'}
+        
+        try:
+            if target_col in numeric_cols:
+                mean_val = self.df[target_col].mean()
+                median_val = self.df[target_col].median()
+                max_val = self.df[target_col].max()
+                min_val = self.df[target_col].min()
+                std_val = self.df[target_col].std()
+                
+                response = f"""📊 **Statistiques pour {target_col}:**
+
+• **Moyenne:** {mean_val:.2f}
+• **Médiane:** {median_val:.2f}
+• **Maximum:** {max_val:.2f}
+• **Minimum:** {min_val:.2f}
+• **Écart-type:** {std_val:.2f}
+
+📈 **Interprétation:** {"Données très variables" if std_val/mean_val > 0.3 else "Données relativement stables"}"""
+                
+                suggestions = [
+                    f"Créer histogramme de {target_col}",
+                    f"Analyser outliers dans {target_col}",
+                    "Voir corrélations avec autres colonnes"
+                ]
+                
+                return {'response': response, 'type': 'statistics', 'suggestions': suggestions}
+        except Exception as e:
+            return {'response': f"❌ Erreur calcul statistiques: {str(e)}", 'type': 'error'}
+    
+    def generate_trends_response(self, question: str, analysis: Dict) -> Dict:
+        """Génère réponse pour questions de tendance"""
+        numeric_cols = self.df.select_dtypes(include=['number']).columns
+        date_cols = [col for col in self.df.columns if 'date' in col.lower() or self.df[col].dtype == 'datetime64[ns]']
+        
+        if not date_cols:
+            return {'response': "❌ Aucune colonne date trouvée pour analyser les tendances.", 'type': 'error'}
+        
+        if not analysis['columns'] and len(numeric_cols) > 0:
+            target_col = numeric_cols[0]
+        elif analysis['columns']:
+            target_col = analysis['columns'][0]
+        else:
+            return {'response': "❌ Veuillez spécifier une colonne numérique pour l'analyse de tendance.", 'type': 'error'}
+        
+        try:
+            date_col = date_cols[0]
+            
+            # Conversion en datetime si nécessaire
+            if self.df[date_col].dtype != 'datetime64[ns]':
+                df_temp = self.df.copy()
+                df_temp[date_col] = pd.to_datetime(df_temp[date_col])
+            else:
+                df_temp = self.df
+            
+            # Calcul tendance (régression simple)
+            df_sorted = df_temp.sort_values(date_col)
+            values = df_sorted[target_col].dropna()
+            
+            if len(values) < 2:
+                return {'response': "❌ Pas assez de données pour calculer une tendance.", 'type': 'error'}
+            
+            # Calcul pente approximative
+            first_half = values[:len(values)//2].mean()
+            second_half = values[len(values)//2:].mean()
+            trend_direction = "📈 CROISSANTE" if second_half > first_half else "📉 DÉCROISSANTE"
+            trend_percentage = ((second_half - first_half) / first_half * 100) if first_half != 0 else 0
+            
+            response = f"""📊 **Analyse de tendance - {target_col}:**
+
+🎯 **Direction:** {trend_direction}
+📈 **Variation:** {abs(trend_percentage):.1f}% {"d'augmentation" if trend_percentage > 0 else "de diminution"}
+📅 **Période:** {df_sorted[date_col].min().strftime('%Y-%m-%d')} → {df_sorted[date_col].max().strftime('%Y-%m-%d')}
+📊 **Valeur actuelle:** {values.iloc[-1]:.2f}
+
+💡 **Conseil:** {"Tendance positive, maintenez le cap!" if trend_percentage > 0 else "Tendance négative, analysez les causes."}"""
+            
+            suggestions = [
+                f"Créer graphique tendance {target_col}",
+                "Analyser saisonnalité",
+                "Identifier facteurs d'influence"
+            ]
+            
+            return {'response': response, 'type': 'trends', 'suggestions': suggestions}
+            
+        except Exception as e:
+            return {'response': f"❌ Erreur analyse tendance: {str(e)}", 'type': 'error'}
+    
+    def generate_correlation_response(self, question: str, analysis: Dict) -> Dict:
+        """Génère réponse pour questions de corrélation"""
+        numeric_cols = self.df.select_dtypes(include=['number']).columns
+        
+        if len(numeric_cols) < 2:
+            return {'response': "❌ Au moins 2 colonnes numériques nécessaires pour calculer les corrélations.", 'type': 'error'}
+        
+        try:
+            corr_matrix = self.df[numeric_cols].corr()
+            
+            # Trouve les corrélations les plus fortes
+            strong_correlations = []
+            for i in range(len(corr_matrix.columns)):
+                for j in range(i+1, len(corr_matrix.columns)):
+                    corr_val = corr_matrix.iloc[i, j]
+                    if abs(corr_val) > 0.5:  # Seuil corrélation significative
+                        strong_correlations.append({
+                            'col1': corr_matrix.columns[i],
+                            'col2': corr_matrix.columns[j],
+                            'correlation': corr_val
+                        })
+            
+            if strong_correlations:
+                response = "🔍 **Corrélations significatives trouvées:**\n\n"
+                
+                for corr in sorted(strong_correlations, key=lambda x: abs(x['correlation']), reverse=True)[:3]:
+                    strength = "très forte" if abs(corr['correlation']) > 0.8 else "forte" if abs(corr['correlation']) > 0.6 else "modérée"
+                    direction = "positive" if corr['correlation'] > 0 else "négative"
+                    
+                    response += f"• **{corr['col1']}** ↔ **{corr['col2']}**: {corr['correlation']:.2f} ({strength}, {direction})\n"
+                
+                response += f"\n💡 **Interprétation:** Les variables les plus corrélées évoluent ensemble."
+                
+                suggestions = [
+                    "Créer matrice corrélation visuelle",
+                    "Analyser relation cause-effet",
+                    "Créer scatter plots"
+                ]
+            else:
+                response = "📊 **Aucune corrélation forte détectée.**\n\nVos variables semblent relativement indépendantes les unes des autres."
+                suggestions = ["Voir corrélations faibles", "Analyser par segments"]
+            
+            return {'response': response, 'type': 'correlation', 'suggestions': suggestions}
+            
+        except Exception as e:
+            return {'response': f"❌ Erreur analyse corrélation: {str(e)}", 'type': 'error'}
+    
+    def generate_visualization_response(self, question: str, analysis: Dict) -> Dict:
+        """Génère réponse pour demandes de visualisation"""
+        suggestions = []
+        
+        # Suggestions basées sur types de colonnes
+        numeric_cols = self.df.select_dtypes(include=['number']).columns
+        categorical_cols = self.df.select_dtypes(include=['object']).columns
+        date_cols = [col for col in self.df.columns if 'date' in col.lower()]
+        
+        if len(numeric_cols) > 0:
+            suggestions.extend([
+                f"Histogramme de {numeric_cols[0]}",
+                f"Box plot de {numeric_cols[0]}"
+            ])
+        
+        if len(categorical_cols) > 0:
+            suggestions.extend([
+                f"Graphique en barres par {categorical_cols[0]}",
+                f"Pie chart de {categorical_cols[0]}"
+            ])
+        
+        if date_cols and len(numeric_cols) > 0:
+            suggestions.append(f"Tendance temporelle {numeric_cols[0]}")
+        
+        response = """🎨 **Créons une visualisation !**
+
+Utilisez l'onglet **"🎨 Custom Builder"** ci-dessus pour créer des graphiques personnalisés.
+
+📊 **Suggestions basées sur vos données:**"""
+        
+        for i, suggestion in enumerate(suggestions[:5], 1):
+            response += f"\n{i}. {suggestion}"
+        
+        return {'response': response, 'type': 'visualization', 'suggestions': suggestions}
+    
+    def generate_general_response(self, question: str, analysis: Dict) -> Dict:
+        """Génère réponse générale pour questions complexes"""
+        # Insights automatiques sur les données
+        insights = []
+        
+        # Aperçu dataset
+        insights.append(f"📊 Votre dataset contient **{len(self.df)} lignes** et **{len(self.df.columns)} colonnes**")
+        
+        # Colonnes par type
+        numeric_cols = self.df.select_dtypes(include=['number']).columns
+        categorical_cols = self.df.select_dtypes(include=['object']).columns
+        
+        if len(numeric_cols) > 0:
+            insights.append(f"📈 **{len(numeric_cols)} colonnes numériques:** {', '.join(numeric_cols[:3])}")
+        
+        if len(categorical_cols) > 0:
+            insights.append(f"🏷️ **{len(categorical_cols)} colonnes catégorielles:** {', '.join(categorical_cols[:3])}")
+        
+        # Données manquantes
+        missing_data = self.df.isnull().sum().sum()
+        if missing_data > 0:
+            insights.append(f"⚠️ **{missing_data} valeurs manquantes** détectées")
+        else:
+            insights.append("✅ **Aucune donnée manquante**")
+        
+        response = f"""🤖 **À propos de vos données:**
+
+{chr(10).join(f"• {insight}" for insight in insights)}
+
+❓ **Questions que vous pouvez poser:**
+• "Quelle est la moyenne de [colonne] ?"
+• "Montre-moi la tendance des [données] ?"
+• "Y a-t-il des corrélations ?"
+• "Crée un graphique de [colonnes]"
+
+💡 Essayez d'être spécifique avec les noms de colonnes !"""
+        
+        return {'response': response, 'type': 'general', 'suggestions': [
+            "Voir statistiques générales",
+            "Analyser qualité des données", 
+            "Explorer corrélations"
+        ]}
+    
+    def chat_with_ollama(self, question: str, context: str) -> str:
+        """Utilise Ollama pour réponse conversationnelle"""
+        try:
+            prompt = f"""Tu es un assistant IA spécialisé dans l'analyse de données. 
+            
+Contexte des données: {context}
+Question utilisateur: {question}
+
+Réponds de manière claire et concise, en français, en te basant uniquement sur les données fournies. 
+Si tu ne peux pas répondre avec certitude, dis-le clairement."""
+            
+            response = requests.post(
+                'http://localhost:11434/api/generate',
+                json={
+                    'model': 'llama2',
+                    'prompt': prompt,
+                    'stream': False,
+                    'options': {'temperature': 0.1}
+                },
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                return response.json().get('response', 'Erreur génération réponse')
+            else:
+                return "Erreur communication avec Ollama"
+                
+        except Exception as e:
+            return f"Erreur Ollama: {str(e)}"
+    
+    def prepare_data_context(self) -> str:
+        """Prépare contexte des données pour LLM"""
+        if self.df is None:
+            return "Aucune donnée disponible"
+        
+        context = f"Dataset: {len(self.df)} lignes, {len(self.df.columns)} colonnes\n"
+        context += f"Colonnes: {', '.join(self.df.columns)}\n"
+        
+        # Statistiques de base pour colonnes numériques
+        numeric_cols = self.df.select_dtypes(include=['number']).columns
+        for col in numeric_cols[:3]:  # Limité à 3 colonnes pour éviter contexte trop long
+            context += f"{col}: moyenne={self.df[col].mean():.2f}, min={self.df[col].min()}, max={self.df[col].max()}\n"
+        
+        return context
+    
+    def save_conversation(self, question: str, response: str, response_type: str):
+        """Sauvegarde conversation en base"""
+        cursor = self.chat_conn.cursor()
+        cursor.execute('''
+            INSERT INTO chat_conversations (timestamp, user_question, bot_response, response_type, data_context)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (datetime.now(), question, response, response_type, str(len(self.df)) if self.df is not None else "None"))
+        self.chat_conn.commit()
+    
+    def get_conversation_history(self, limit: int = 10) -> List[Dict]:
+        """Récupère historique conversations"""
+        cursor = self.chat_conn.cursor()
+        cursor.execute('''
+            SELECT timestamp, user_question, bot_response, response_type
+            FROM chat_conversations 
+            ORDER BY timestamp DESC 
+            LIMIT ?
+        ''', (limit,))
+        
+        results = cursor.fetchall()
+        return [{
+            'timestamp': row[0],
+            'question': row[1],
+            'response': row[2],
+            'type': row[3]
+        } for row in results]
+
+def display_chat_interface(df):
+    """Interface chat complète avec choix du mode"""
+    st.subheader("🤖 AI Data Assistant")
+    
+    # Initialisation système chat
+    if 'chat_system' not in st.session_state:
+        st.session_state.chat_system = HybridChatSystem(df)
+    else:
+        # Mise à jour DataFrame si changé
+        st.session_state.chat_system.df = df
+    
+    chat_system = st.session_state.chat_system
+    
+    # Interface de choix du mode
+    with st.expander("⚙️ Chat Mode Settings", expanded=False):
+        st.markdown("**Choose your AI experience:**")
+        
+        # Détection Ollama
+        ollama_available = chat_system.detect_ollama_availability()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 🧠 Smart Mode (Recommended)")
+            st.info("""
+            **✅ Always available**
+            • Instant responses (< 1 second)
+            • Precise calculations on your data
+            • Works everywhere (no setup needed)
+            • Based on statistical analysis
+            """)
+        
+        with col2:
+            st.markdown("#### 🚀 Conversational Mode")
+            if ollama_available:
+                st.success("""
+                **✅ Ollama detected!**
+                • Natural language responses
+                • Creative explanations
+                • More flexible conversations
+                • Requires local Ollama installation
+                """)
+            else:
+                st.warning("""
+                **❌ Ollama not available**
+                • Install Ollama locally for this mode
+                • More natural conversations
+                • Falls back to Smart Mode automatically
+                """)
+        
+        # Sélection mode
+        if ollama_available:
+            chat_mode = st.radio(
+                "Select Mode:",
+                ["🧠 Smart Mode", "🚀 Conversational Mode", "🔄 Hybrid (Best of Both)"],
+                index=2,
+                horizontal=True
+            )
+        else:
+            chat_mode = st.radio(
+                "Select Mode:",
+                ["🧠 Smart Mode", "🔄 Hybrid (Fallback to Smart)"],
+                index=1,
+                horizontal=True
+            )
+        
+        st.session_state.chat_mode = chat_mode
+    
+    # Zone de chat principale
+    st.markdown("---")
+    
+    # Historique des conversations
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    
+    # Affichage historique
+    if st.session_state.chat_history:
+        st.markdown("### 💬 Conversation History")
+        
+        for i, chat in enumerate(reversed(st.session_state.chat_history[-5:])):  # 5 dernières conversations
+            with st.container():
+                st.markdown(f"**🙋‍♂️ You:** {chat['question']}")
+                st.markdown(f"**🤖 AI:** {chat['response']}")
+                
+                if chat.get('suggestions'):
+                    cols = st.columns(len(chat['suggestions']))
+                    for j, suggestion in enumerate(chat['suggestions'][:3]):
+                        with cols[j]:
+                            if st.button(f"💡 {suggestion}", key=f"suggestion_{i}_{j}"):
+                                st.session_state.suggested_question = suggestion
+                                st.rerun()
+                st.markdown("---")
+    
+    # Input utilisateur
+    question_input = st.text_input(
+        "💬 Ask about your data:",
+        placeholder="e.g., What's the average sales? Show me trends. Any correlations?",
+        value=st.session_state.get('suggested_question', ''),
+        key="user_question"
+    )
+    
+    # Suggestions de questions
+    if df is not None:
+        st.markdown("**💡 Quick Questions:**")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if st.button("📊 Dataset Overview"):
+                st.session_state.suggested_question = "Tell me about this dataset"
+                st.rerun()
+        
+        with col2:
+            numeric_cols = df.select_dtypes(include=['number']).columns
+            if len(numeric_cols) > 0:
+                if st.button(f"📈 {numeric_cols[0]} Stats"):
+                    st.session_state.suggested_question = f"What are the statistics for {numeric_cols[0]}?"
+                    st.rerun()
+        
+        with col3:
+            if len(numeric_cols) > 1:
+                if st.button("🔍 Find Correlations"):
+                    st.session_state.suggested_question = "Show me correlations between columns"
+                    st.rerun()
+        
+        with col4:
+            date_cols = [col for col in df.columns if 'date' in col.lower()]
+            if date_cols and len(numeric_cols) > 0:
+                if st.button("📈 Show Trends"):
+                    st.session_state.suggested_question = f"What's the trend for {numeric_cols[0]}?"
+                    st.rerun()
+    
+    # Traitement question
+    if question_input and st.button("💬 Send", type="primary"):
+        with st.spinner("🤖 Thinking..."):
+            # Choix du mode de réponse
+            mode = st.session_state.get('chat_mode', '🧠 Smart Mode')
+            
+            if mode == "🚀 Conversational Mode" and ollama_available:
+                # Mode conversationnel avec Ollama
+                context = chat_system.prepare_data_context()
+                ai_response = chat_system.chat_with_ollama(question_input, context)
+                response_type = "ollama"
+                suggestions = ["Ask another question", "Create visualization", "Analyze further"]
+                
+            elif mode == "🔄 Hybrid (Best of Both)" or mode == "🔄 Hybrid (Fallback to Smart)":
+                # Mode hybride
+                intelligent_result = chat_system.intelligent_response(question_input)
+                
+                if intelligent_result['type'] in ['statistics', 'trends', 'correlation'] and ollama_available:
+                    # Questions simples → réponse intelligente rapide
+                    ai_response = intelligent_result['response']
+                    suggestions = intelligent_result.get('suggestions', [])
+                    response_type = "intelligent"
+                elif ollama_available:
+                    # Questions complexes → Ollama si disponible
+                    context = chat_system.prepare_data_context()
+                    ai_response = chat_system.chat_with_ollama(question_input, context)
+                    suggestions = ["Ask another question", "Get statistics", "Show visualization"]
+                    response_type = "ollama"
+                else:
+                    # Fallback → réponse intelligente
+                    ai_response = intelligent_result['response']
+                    suggestions = intelligent_result.get('suggestions', [])
+                    response_type = "intelligent"
+            
+            else:
+                # Mode smart uniquement
+                intelligent_result = chat_system.intelligent_response(question_input)
+                ai_response = intelligent_result['response']
+                suggestions = intelligent_result.get('suggestions', [])
+                response_type = "intelligent"
+        
+        # Ajout à l'historique
+        chat_entry = {
+            'question': question_input,
+            'response': ai_response,
+            'type': response_type,
+            'suggestions': suggestions,
+            'timestamp': datetime.now()
+        }
+        
+        st.session_state.chat_history.append(chat_entry)
+        chat_system.save_conversation(question_input, ai_response, response_type)
+        
+        # Clear suggested question
+        if 'suggested_question' in st.session_state:
+            del st.session_state.suggested_question
+        
+        st.rerun()
+    
+    # Message si pas de données
+    if df is None:
+        st.info("💡 Upload data or generate sample data to start chatting with your dataset!")
+
 
 # Interface principale
 st.subheader("1. 📁 Get Your Data")
@@ -1709,6 +2842,22 @@ if st.session_state.processed_data is not None:
     st.markdown("---")
     display_data_analysis(st.session_state.processed_data)
     
+    # Option de téléchargement des données générées
+    if "Generated" in st.session_state.data_source:
+        st.markdown("---")
+        st.subheader("📥 Download Generated Data")
+        
+        # CSV download
+        csv = st.session_state.processed_data.to_csv(index=False)
+        filename = "sample_ecommerce_data.csv" if "E-commerce" in st.session_state.data_source else "sample_healthcare_data.csv"
+        
+        st.download_button(
+            label="📥 Download as CSV",
+            data=csv,
+            file_name=filename,
+            mime='text/csv',
+            use_container_width=True
+        )
 
 else:
     # Instructions quand pas de données
