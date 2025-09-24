@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.colors
 import numpy as np
 from datetime import datetime, timedelta
 import random
@@ -79,27 +80,41 @@ def generate_healthcare_data():
 
 
 
-def create_custom_chart(df, chart_type, x_col, y_col, color_col=None, size_col=None, title=""):
-    """Crée un graphique personnalisé selon les paramètres"""
+
+def create_custom_chart(df, chart_type, x_col, y_col, color_col=None, size_col=None, title="", 
+                       chart_color="#1f77b4", x_label=None, y_label=None, axis_color="#000000"):
+    """Version avec personnalisation axes et couleurs"""
     try:
+        # Couleur par défaut
+        color_sequence = [chart_color]
+        
         if chart_type == "Line Chart":
             fig = px.line(df, x=x_col, y=y_col, color=color_col, title=title or f"{y_col} over {x_col}")
-            
+            if not color_col:
+                fig.update_traces(line_color=chart_color)
+                
         elif chart_type == "Bar Chart":
             fig = px.bar(df, x=x_col, y=y_col, color=color_col, title=title or f"{y_col} by {x_col}")
-            
+            if not color_col:
+                fig.update_traces(marker_color=chart_color)
+                
         elif chart_type == "Scatter Plot":
             fig = px.scatter(df, x=x_col, y=y_col, color=color_col, size=size_col, 
                            title=title or f"{y_col} vs {x_col}")
-            
+            if not color_col:
+                fig.update_traces(marker_color=chart_color)
+                
         elif chart_type == "Histogram":
             fig = px.histogram(df, x=x_col, color=color_col, title=title or f"Distribution of {x_col}")
-            
+            if not color_col:
+                fig.update_traces(marker_color=chart_color)
+                
         elif chart_type == "Box Plot":
             fig = px.box(df, x=x_col, y=y_col, color=color_col, title=title or f"{y_col} distribution by {x_col}")
-            
+            if not color_col:
+                fig.update_traces(marker_color=chart_color)
+                
         elif chart_type == "Pie Chart":
-            # Agrégation pour pie chart
             if y_col:
                 pie_data = df.groupby(x_col)[y_col].sum().reset_index()
                 fig = px.pie(pie_data, values=y_col, names=x_col, title=title or f"{y_col} by {x_col}")
@@ -109,10 +124,8 @@ def create_custom_chart(df, chart_type, x_col, y_col, color_col=None, size_col=N
                 
         elif chart_type == "Heatmap":
             if df[x_col].dtype in ['object'] and df[y_col].dtype in ['object']:
-                # Cross-tabulation pour variables catégorielles
                 heatmap_data = pd.crosstab(df[x_col], df[y_col])
             else:
-                # Corrélation ou pivot
                 heatmap_data = df.pivot_table(values=color_col if color_col else df.columns[0], 
                                             index=x_col, columns=y_col, aggfunc='mean')
             
@@ -120,15 +133,44 @@ def create_custom_chart(df, chart_type, x_col, y_col, color_col=None, size_col=N
             
         elif chart_type == "Area Chart":
             fig = px.area(df, x=x_col, y=y_col, color=color_col, title=title or f"{y_col} area over {x_col}")
-            
+            if not color_col:
+                fig.update_traces(fill='tonexty', fillcolor=chart_color, line_color=chart_color)
+                
         elif chart_type == "Violin Plot":
             fig = px.violin(df, x=x_col, y=y_col, color=color_col, title=title or f"{y_col} distribution by {x_col}")
-            
+            if not color_col:
+                fig.update_traces(marker_color=chart_color)
+                
         else:
             return None
+        
+        # PERSONNALISATION AXES ET COULEURS
+        fig.update_layout(
+            height=500, 
+            showlegend=True,
+            # Labels personnalisés
+            xaxis_title=x_label or x_col,
+            yaxis_title=y_label or y_col,
+            # Couleurs axes
+            xaxis=dict(
+                title_font_color=axis_color,
+                tickfont_color=axis_color
+            ),
+            yaxis=dict(
+                title_font_color=axis_color,
+                tickfont_color=axis_color
+            ),
+            # Couleur titre
+            title_font_color=axis_color
+        )
+        
+        # Cas spécial pour Pie Chart (pas d'axes)
+        if chart_type == "Pie Chart":
+            fig.update_layout(
+                title_font_color=axis_color,
+                font_color=axis_color
+            )
             
-        # Personnalisation commune
-        fig.update_layout(height=500, showlegend=True)
         return fig
         
     except Exception as e:
@@ -136,9 +178,9 @@ def create_custom_chart(df, chart_type, x_col, y_col, color_col=None, size_col=N
         return None
 
 def display_chart_builder(df):
-    """Interface de construction de graphiques personnalisés"""
+    """Interface avec personnalisation axes et couleurs"""
     st.subheader("🎨 Custom Chart Builder")
-    st.markdown("**Create your own visualizations:**")
+    st.markdown("**Create your personalized visualizations:**")
     
     # Séparer colonnes par type
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -151,73 +193,159 @@ def display_chart_builder(df):
     
     all_cols = df.columns.tolist()
     
-    # Interface de sélection
+    # Interface en 2 colonnes
     col1, col2 = st.columns(2)
     
     with col1:
+        st.markdown("**📊 Chart Configuration**")
         chart_type = st.selectbox(
-            "📊 Chart Type",
+            "Chart Type",
             ["Line Chart", "Bar Chart", "Scatter Plot", "Histogram", 
              "Box Plot", "Pie Chart", "Heatmap", "Area Chart", "Violin Plot"],
             help="Choose the type of visualization"
         )
         
-        # Sélection intelligente selon le type de graphique
+        # Sélection intelligente selon le type
         if chart_type in ["Line Chart", "Area Chart"]:
-            x_col = st.selectbox("X-Axis", datetime_cols + categorical_cols + numeric_cols, 
-                               help="Usually dates or categories for line/area charts")
+            x_col = st.selectbox("X-Axis Data", datetime_cols + categorical_cols + numeric_cols, 
+                               help="Usually time/dates for trends")
         elif chart_type == "Histogram":
-            x_col = st.selectbox("Column", numeric_cols + categorical_cols,
+            x_col = st.selectbox("Column to Analyze", numeric_cols + categorical_cols,
                                help="Column to show distribution")
         elif chart_type == "Pie Chart":
             x_col = st.selectbox("Categories", categorical_cols,
-                               help="Categorical column for pie slices")
+                               help="Categories for pie slices")
         else:
-            x_col = st.selectbox("X-Axis", all_cols)
+            x_col = st.selectbox("X-Axis Data", all_cols)
     
     with col2:
+        st.markdown("**📊 Data Configuration**")
         # Y-axis selon type de graphique
         if chart_type in ["Histogram", "Pie Chart"]:
             y_col = st.selectbox("Values (optional)", [None] + numeric_cols,
                                help="Leave empty to count occurrences")
         elif chart_type in ["Box Plot", "Violin Plot"]:
-            y_col = st.selectbox("Y-Axis (Values)", numeric_cols,
-                               help="Numeric column to analyze distribution")
+            y_col = st.selectbox("Y-Axis Values", numeric_cols,
+                               help="Numeric values to analyze")
         elif chart_type == "Heatmap":
-            y_col = st.selectbox("Y-Axis", all_cols,
-                               help="Second dimension for heatmap")
+            y_col = st.selectbox("Y-Axis Data", all_cols,
+                               help="Second dimension")
         else:
-            y_col = st.selectbox("Y-Axis", numeric_cols + [None])
+            y_col = st.selectbox("Y-Axis Data", numeric_cols + [None])
     
-    # Options avancées
-    with st.expander("🔧 Advanced Options"):
-        col1, col2, col3 = st.columns(3)
+    # SECTION AVANCÉE AMÉLIORÉE
+    with st.expander("🎨 Advanced Styling & Data Options"):
+        
+        # DATA OPTIONS
+        st.markdown("**📊 Data Visualization**")
+        col1, col2 = st.columns(2)
         
         with col1:
-            color_col = st.selectbox("Color By", [None] + categorical_cols + numeric_cols,
-                                   help="Add color dimension")
+            color_col = st.selectbox(
+                "Color By", 
+                [None] + categorical_cols + numeric_cols,
+                help="🎯 Color data points by category/value. Example: Color sales bars by 'product_category' to see which category performs best"
+            )
+            
+            # Explication Color By
+            if color_col:
+                unique_values = df[color_col].nunique()
+                st.info(f"ℹ️ Will create {unique_values} different colors for each unique value in '{color_col}'")
         
         with col2:
             if chart_type == "Scatter Plot":
-                size_col = st.selectbox("Size By", [None] + numeric_cols,
-                                      help="Size points by values")
+                size_col = st.selectbox(
+                    "Size By", 
+                    [None] + numeric_cols,
+                    help="Size points by values (bubble chart effect)"
+                )
             else:
                 size_col = None
         
+        st.markdown("---")
+        
+        # STYLE OPTIONS
+        st.markdown("**🎨 Visual Styling**")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            chart_color = st.color_picker(
+                "Chart Color", 
+                value="#1f77b4", 
+                help="Main color for your chart (only applies when 'Color By' is empty)"
+            )
+        
+        with col2:
+            axis_color = st.color_picker(
+                "Text & Axes Color", 
+                value="#000000", 
+                help="Color for titles, labels, and axis text"
+            )
+        
         with col3:
-            custom_title = st.text_input("Custom Title", 
-                                       placeholder="Leave empty for auto title")
+            st.markdown("**Color Preview**")
+            st.markdown(f'<div style="background: linear-gradient(45deg, {chart_color}, {axis_color}); height: 30px; border-radius: 5px; border: 1px solid #ddd;"></div>', 
+                       unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # LABELS OPTIONS
+        st.markdown("**📝 Custom Labels**")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            x_label = st.text_input(
+                "X-Axis Label", 
+                value="", 
+                placeholder=f"Default: {x_col}" if x_col else "Auto",
+                help="Custom name for X-axis"
+            )
+        
+        with col2:
+            if chart_type not in ["Pie Chart", "Histogram"]:
+                y_label = st.text_input(
+                    "Y-Axis Label", 
+                    value="", 
+                    placeholder=f"Default: {y_col}" if y_col else "Auto",
+                    help="Custom name for Y-axis"
+                )
+            else:
+                y_label = None
+        
+        with col3:
+            custom_title = st.text_input(
+                "Chart Title", 
+                value="", 
+                placeholder="Auto-generated title",
+                help="Custom title for your chart"
+            )
     
-    # Bouton création graphique
-    if st.button("🎨 Create Chart", type="primary"):
+    # SECTION AIDE COLOR BY
+    if not color_col:
+        st.info("💡 **Tip:** Use 'Color By' to add a data dimension! Example: Color sales by product category to see which products perform best.")
+    
+    # Bouton création avec style
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        create_button = st.button(
+            "🎨 Create Custom Chart", 
+            type="primary", 
+            use_container_width=True
+        )
+    
+    if create_button:
         if x_col and (y_col or chart_type in ["Histogram", "Pie Chart"]):
-            with st.spinner("Creating your custom chart..."):
-                fig = create_custom_chart(df, chart_type, x_col, y_col, color_col, size_col, custom_title)
+            with st.spinner("🎨 Creating your personalized chart..."):
+                fig = create_custom_chart(
+                    df, chart_type, x_col, y_col, color_col, size_col, 
+                    custom_title, chart_color, x_label, y_label, axis_color
+                )
                 
             if fig:
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"chart_builder_{len(st.session_state.get('custom_charts', []))}")
                 
-                # Sauvegarder dans session state
+                # Sauvegarder avec nouvelles options
                 if 'custom_charts' not in st.session_state:
                     st.session_state.custom_charts = []
                 
@@ -228,16 +356,23 @@ def display_chart_builder(df):
                     'color_col': color_col,
                     'size_col': size_col,
                     'title': custom_title or f"{chart_type}: {y_col or x_col} by {x_col}",
+                    'chart_color': chart_color,
+                    'axis_color': axis_color,
+                    'x_label': x_label,
+                    'y_label': y_label,
                     'timestamp': datetime.now().strftime("%H:%M:%S")
                 }
                 st.session_state.custom_charts.append(chart_config)
                 
-                st.success(f"✅ {chart_type} created successfully!")
+                # Message personnalisé
+                color_info = f" with {color_col} coloring" if color_col else f" in {chart_color}"
+                st.success(f"✅ {chart_type} created{color_info}!")
         else:
             st.warning("⚠️ Please select required columns for this chart type")
 
+
 def display_chart_gallery(df):
-    """Affiche galerie des graphiques créés"""
+    """Gallery avec support des nouvelles options"""
     if 'custom_charts' in st.session_state and st.session_state.custom_charts:
         st.subheader("🖼️ Your Chart Gallery")
         st.markdown(f"**{len(st.session_state.custom_charts)} custom charts created**")
@@ -254,45 +389,72 @@ def display_chart_gallery(df):
         if view_mode == "Grid View":
             # Affichage en grille
             cols = st.columns(2)
-            for i, chart_config in enumerate(st.session_state.custom_charts[-6:]):  # 6 derniers
+            for i, chart_config in enumerate(st.session_state.custom_charts[-6:]):
                 with cols[i % 2]:
                     with st.container():
                         st.markdown(f"**{chart_config['title']}**")
-                        st.caption(f"Created at {chart_config['timestamp']}")
                         
-                        # Recréer le graphique
+                        # Info styling
+                        style_info = []
+                        if chart_config.get('color_col'):
+                            style_info.append(f"Colored by {chart_config['color_col']}")
+                        else:
+                            style_info.append(f"Color: {chart_config.get('chart_color', '#1f77b4')}")
+                        
+                        st.caption(" | ".join(style_info) + f" | {chart_config['timestamp']}")
+                        
+                        # Recréer avec toutes les options
                         fig = create_custom_chart(
                             df, chart_config['type'], chart_config['x_col'], 
                             chart_config['y_col'], chart_config['color_col'], 
-                            chart_config['size_col'], chart_config['title']
+                            chart_config['size_col'], chart_config['title'],
+                            chart_config.get('chart_color', '#1f77b4'),
+                            chart_config.get('x_label'), chart_config.get('y_label'),
+                            chart_config.get('axis_color', '#000000')
                         )
                         if fig:
-                            fig.update_layout(height=300)  # Plus petit pour galerie
-                            st.plotly_chart(fig, use_container_width=True)
+                            fig.update_layout(height=300)
+                            st.plotly_chart(fig, use_container_width=True, key=f"gallery_grid_{i}_{chart_config['timestamp']}")
         
         else:
-            # Affichage en liste avec sélection
+            # Affichage en liste détaillée
             for i, chart_config in enumerate(reversed(st.session_state.custom_charts)):
                 with st.expander(f"📊 {chart_config['title']} - {chart_config['timestamp']}"):
                     col1, col2 = st.columns([3, 1])
                     
                     with col1:
-                        # Détails du graphique
+                        # Détails configuration
                         st.markdown(f"**Type:** {chart_config['type']}")
-                        st.markdown(f"**X-Axis:** {chart_config['x_col']}")
-                        st.markdown(f"**Y-Axis:** {chart_config['y_col'] or 'None'}")
+                        st.markdown(f"**X-Axis:** {chart_config['x_col']} → *{chart_config.get('x_label', 'Auto label')}*")
+                        if chart_config['y_col']:
+                            st.markdown(f"**Y-Axis:** {chart_config['y_col']} → *{chart_config.get('y_label', 'Auto label')}*")
+                        
+                        # Info couleurs
                         if chart_config['color_col']:
-                            st.markdown(f"**Color:** {chart_config['color_col']}")
+                            st.markdown(f"**🎨 Color By:** {chart_config['color_col']}")
+                        else:
+                            chart_color = chart_config.get('chart_color', '#1f77b4')
+                            st.markdown(f"**🎨 Chart Color:** {chart_color}")
+                            st.markdown(f'<div style="background-color: {chart_color}; height: 20px; width: 100px; border-radius: 3px; border: 1px solid #ddd; display: inline-block;"></div>', 
+                                       unsafe_allow_html=True)
+                        
+                        axis_color = chart_config.get('axis_color', '#000000')
+                        st.markdown(f"**📝 Text Color:** {axis_color}")
                     
                     with col2:
-                        if st.button("🔄 Recreate", key=f"recreate_{i}"):
+                        if st.button("🔄 Recreate", key=f"recreate_list_{i}_{chart_config['timestamp']}"):
                             fig = create_custom_chart(
                                 df, chart_config['type'], chart_config['x_col'], 
                                 chart_config['y_col'], chart_config['color_col'], 
-                                chart_config['size_col'], chart_config['title']
+                                chart_config['size_col'], chart_config['title'],
+                                chart_config.get('chart_color', '#1f77b4'),
+                                chart_config.get('x_label'), chart_config.get('y_label'),
+                                chart_config.get('axis_color', '#000000')
                             )
                             if fig:
-                                st.plotly_chart(fig, use_container_width=True)
+                                st.plotly_chart(fig, use_container_width=True, key=f"recreated_{i}_{chart_config['timestamp']}")
+    else:
+        st.info("🎨 Create some custom charts to see them in your gallery!")
 
 def suggest_chart_ideas(df):
     """Suggère des idées de graphiques selon les données"""
