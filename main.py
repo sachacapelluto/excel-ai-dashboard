@@ -6,6 +6,8 @@ import plotly.colors
 import numpy as np
 from datetime import datetime, timedelta
 import random
+import warnings
+warnings.filterwarnings('ignore')
 
 # Configuration page
 st.set_page_config(
@@ -14,7 +16,13 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
+# Initialisation cleaning
+if 'cleaned_data' not in st.session_state:
+    st.session_state.cleaned_data = None
+if 'original_data' not in st.session_state:
+    st.session_state.original_data = None
+if 'cleaning_applied' not in st.session_state:
+    st.session_state.cleaning_applied = False
 # Initialisation session state
 if 'processed_data' not in st.session_state:
     st.session_state.processed_data = None
@@ -32,21 +40,29 @@ st.markdown("---")
 with st.sidebar:
     st.markdown("### 🚀 Features")
     st.markdown("✅ Excel & CSV Upload")
+    st.markdown("✅ Data Cleaning System") 
     st.markdown("✅ Sample Data Generator") 
     st.markdown("✅ Auto Data Analysis") 
+    st.markdown("✅ Custom Chart Builder")
     st.markdown("✅ Smart Visualizations")
     st.markdown("🔄 AI Chat (Coming Soon)")
     st.markdown("🧠 Memory System (Coming Soon)")
     
     st.markdown("---")
-    st.markdown("### 📊 Stats")
-    st.metric("Files Processed", st.session_state.upload_count)
+    st.markdown("### 📊 Current Data Status")
     
     if st.session_state.processed_data is not None:
-        st.markdown("### 📁 Current Data")
+        st.metric("Files Processed", st.session_state.upload_count)
         st.info(f"Source: {st.session_state.data_source}")
         st.metric("Rows", len(st.session_state.processed_data))
         st.metric("Columns", len(st.session_state.processed_data.columns))
+        
+        # NOUVEAU - Statut nettoyage
+        if st.session_state.get('cleaning_applied', False):
+            st.markdown("### 🧹 Cleaning Status")
+            st.success("✅ Data Cleaned")
+    else:
+        st.metric("Files Processed", st.session_state.upload_count)
 
 def generate_ecommerce_data():
     """Génère données e-commerce"""
@@ -79,6 +95,233 @@ def generate_healthcare_data():
     return pd.DataFrame(data)
 
 
+
+def generate_dirty_dataset():
+    """Génère un dataset intentionnellement 'sale' pour tester le nettoyage"""
+    import random
+    from datetime import datetime, timedelta
+    import numpy as np
+    
+    # Base de données avec 100 lignes
+    dates = []
+    sales = []
+    products = []
+    regions = []
+    prices = []
+    customers = []
+    categories = []
+    revenues = []
+    
+    base_date = datetime.now() - timedelta(days=100)
+    
+    for i in range(100):
+        # Dates avec formats inconsistants (PROBLÈME 1)
+        if i % 4 == 0:
+            dates.append((base_date + timedelta(days=i)).strftime('%Y-%m-%d'))  # Format ISO
+        elif i % 4 == 1:
+            dates.append((base_date + timedelta(days=i)).strftime('%d/%m/%Y'))  # Format EU
+        elif i % 4 == 2:
+            dates.append((base_date + timedelta(days=i)).strftime('%m-%d-%Y'))  # Format US
+        else:
+            dates.append((base_date + timedelta(days=i)).strftime('%B %d, %Y'))  # Format texte
+        
+        # Sales avec valeurs manquantes (PROBLÈME 2)
+        if i % 7 == 0:  # ~14% de valeurs manquantes
+            sales.append(np.nan)
+        else:
+            sales.append(random.randint(500, 3000))
+        
+        # Products avec valeurs vides (PROBLÈME 3)
+        if i % 8 == 0:
+            products.append("")  # Chaîne vide
+        elif i % 8 == 1:
+            products.append(None)  # None
+        else:
+            products.append(random.choice(['iPhone', 'Samsung', 'iPad', 'MacBook', 'Dell Laptop']))
+        
+        # Regions avec inconsistances (PROBLÈME 4)
+        region_variants = {
+            'North': ['North', 'NORTH', ' North ', 'north', 'N'],
+            'South': ['South', 'SOUTH', ' South', 'south', 'S'],
+            'East': ['East', 'EAST', 'east', ' East ', 'E'],
+            'West': ['West', 'WEST', 'west', ' West', 'W']
+        }
+        base_region = random.choice(list(region_variants.keys()))
+        regions.append(random.choice(region_variants[base_region]))
+        
+        # Prices avec formats incohérents (PROBLÈME 5)
+        base_price = random.randint(100, 2000)
+        if i % 5 == 0:
+            prices.append(f"${base_price:,}")  # Format avec $
+        elif i % 5 == 1:
+            prices.append(f"{base_price}.00")  # Format décimal
+        elif i % 5 == 2:
+            prices.append(f"{base_price}€")  # Format euro
+        elif i % 5 == 3:
+            prices.append(str(base_price))  # String simple
+        else:
+            prices.append(base_price)  # Numeric correct
+        
+        # Customers avec doublons intentionnels (PROBLÈME 6)
+        if i < 20:  # Premiers 20 = clients uniques
+            customers.append(f"Customer_{i+1:03d}")
+        else:  # Après, répétitions pour créer doublons
+            customers.append(f"Customer_{random.randint(1, 15):03d}")
+        
+        # Categories avec valeurs manquantes (PROBLÈME 7)
+        if i % 6 == 0:
+            categories.append(np.nan)
+        else:
+            categories.append(random.choice(['Electronics', 'Accessories', 'Software', 'Hardware']))
+        
+        # Revenue avec outliers extrêmes (PROBLÈME 8)
+        if i % 15 == 0:  # Outliers intentionnels
+            revenues.append(random.randint(50000, 100000))  # Très élevé
+        elif i % 17 == 0:
+            revenues.append(random.randint(1, 10))  # Très bas
+        else:
+            revenues.append(random.randint(1000, 5000))  # Normal
+    
+    # Construction DataFrame avec colonnes supplémentaires problématiques
+    data = {
+        'transaction_date': dates,  # Formats de dates mixtes
+        'sales_amount': sales,  # Valeurs manquantes
+        'product_name': products,  # Chaînes vides
+        'region': regions,  # Inconsistances de casse
+        'price_str': prices,  # Types mixtes (string/numeric)
+        'customer_id': customers,  # Doublons
+        'category': categories,  # Valeurs manquantes
+        'total_revenue': revenues,  # Outliers
+        
+        # Colonnes supplémentaires avec problèmes spécifiques
+        'empty_column': [np.nan] * 100,  # PROBLÈME 9: Colonne complètement vide
+        'mostly_empty': [1, 2, np.nan, np.nan, np.nan] * 20,  # PROBLÈME 10: 90% vide
+        'debug_flag': [True, False] * 50,  # PROBLÈME 11: Colonne technique inutile
+        'temp_id': [f"temp_{i}" for i in range(100)],  # PROBLÈME 12: Colonne temporaire
+        
+        # Données numériques en format text (PROBLÈME 13)
+        'quantity_text': [str(random.randint(1, 10)) for _ in range(100)],
+        'discount_text': [f"{random.randint(0, 30)}%" for _ in range(100)],
+        
+        # Espaces et caractères indésirables (PROBLÈME 14)
+        'notes': [
+            f" Note {i} " if i % 3 == 0 else
+            f"Note{i}\t" if i % 3 == 1 else
+            f"  Note  {i}  \n" 
+            for i in range(100)
+        ]
+    }
+    
+    # Création DataFrame
+    df = pd.DataFrame(data)
+    
+    # Ajout de lignes dupliquées exactes (PROBLÈME 15)
+    duplicate_indices = [5, 15, 25, 35, 45]  # 5 doublons exacts
+    duplicate_rows = df.iloc[duplicate_indices].copy()
+    df = pd.concat([df, duplicate_rows], ignore_index=True)
+    
+    return df
+
+def generate_moderately_dirty_dataset():
+    """Génère un dataset avec quelques problèmes seulement (test intermédiaire)"""
+    import random
+    from datetime import datetime, timedelta
+    
+    # Dataset plus petit avec moins de problèmes
+    dates = [(datetime.now() - timedelta(days=x)) for x in range(50)]
+    
+    data = {
+        'date': dates,
+        'sales': [random.randint(800, 2500) if i % 10 != 0 else np.nan for i in range(50)],  # 10% manquantes
+        'product': [random.choice(['Phone', 'Laptop', 'Tablet']) for _ in range(50)],
+        'region': [random.choice(['North', 'South', 'East', 'West']) for _ in range(50)],
+        'revenue': [
+            random.randint(15000, 25000) if i % 20 == 0 else  # Quelques outliers
+            random.randint(1000, 4000)
+            for i in range(50)
+        ]
+    }
+    
+    df = pd.DataFrame(data)
+    
+    # Ajout de 2-3 doublons
+    duplicate_rows = df.iloc[[5, 15, 25]].copy()
+    df = pd.concat([df, duplicate_rows], ignore_index=True)
+    
+    return df
+
+# MODIFICATION DE LA SECTION GÉNÉRATION dans votre interface principale
+# Trouvez cette section dans votre main.py et remplacez par:
+
+def display_sample_data_generation():
+    """Interface améliorée avec datasets de test nettoyage"""
+    st.markdown("**Generate sample data for testing:**")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("🛍️ Generate E-commerce Data", use_container_width=True):
+            with st.spinner("Generating clean e-commerce data..."):
+                df = generate_ecommerce_data()
+                df = process_data(df, "Generated E-commerce Dataset (90 days)")
+            st.success("✅ Clean e-commerce data generated!")
+    
+    with col2:
+        if st.button("🏥 Generate Healthcare Data", use_container_width=True):
+            with st.spinner("Generating clean healthcare data..."):
+                df = generate_healthcare_data()
+                df = process_data(df, "Generated Healthcare Dataset (60 days)")
+            st.success("✅ Clean healthcare data generated!")
+    
+    with col3:
+        if st.button("🧪 Generate DIRTY Dataset", use_container_width=True, help="Perfect for testing data cleaning features!"):
+            with st.spinner("Generating intentionally messy data..."):
+                df = generate_dirty_dataset()
+                df = process_data(df, "🧪 DIRTY Test Dataset (15+ problems)")
+            st.success("⚠️ Dirty dataset generated - perfect for cleaning tests!")
+    
+    # Bouton pour dataset moyennement sale
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔧 Generate Moderately Dirty Dataset", use_container_width=True):
+            with st.spinner("Generating dataset with some issues..."):
+                df = generate_moderately_dirty_dataset()
+                df = process_data(df, "🔧 Moderately Dirty Dataset (few problems)")
+            st.success("✅ Moderately dirty dataset generated!")
+    
+    with col2:
+        st.info("💡 **Tip:** Use the Dirty Dataset to test all cleaning features!")
+    
+    st.markdown("---")
+    st.markdown("### 🎯 Dataset Descriptions:")
+    
+    with st.expander("🧪 What's in the DIRTY Dataset?"):
+        st.markdown("""
+        **This dataset contains 15+ intentional problems:**
+        
+        **Missing Values:**
+        - 🚫 14% missing sales data
+        - 🚫 17% missing categories
+        
+        **Data Type Issues:**
+        - 📊 Numbers stored as text with $ and % symbols
+        - 📅 Dates in 4 different formats (ISO, EU, US, text)
+        
+        **Inconsistent Data:**
+        - 🔤 Region names with mixed case and spaces
+        - 🗑️ Empty product names
+        
+        **Duplicates & Outliers:**
+        - 🔄 5 exact duplicate transactions
+        - 🎯 Extreme revenue outliers (1-10 vs 50000-100000)
+        
+        **Useless Columns:**
+        - 📂 Completely empty columns
+        - 🔧 Debug flags and temp IDs
+        - 📝 Text with extra spaces and tabs
+        
+        **Perfect for testing all cleaning features!** 🧹
+        """)
 
 
 def create_custom_chart(df, chart_type, x_col, y_col, color_col=None, size_col=None, title="", 
@@ -552,6 +795,511 @@ def suggest_chart_ideas(df):
                     }
                     st.session_state.custom_charts.append(chart_config)
 
+
+
+def analyze_data_quality(df):
+    """Analyse complète de la qualité des données"""
+    report = {
+        'missing_values': {},
+        'duplicates': 0,
+        'outliers': {},
+        'data_types': {},
+        'empty_columns': [],
+        'quality_score': 100,
+        'total_issues': 0
+    }
+    
+    # 1. Analyse valeurs manquantes
+    missing_data = df.isnull().sum()
+    for col in missing_data[missing_data > 0].index:
+        missing_count = missing_data[col]
+        missing_percent = (missing_count / len(df)) * 100
+        report['missing_values'][col] = {
+            'count': int(missing_count),
+            'percentage': round(missing_percent, 2)
+        }
+    
+    # 2. Détection doublons
+    report['duplicates'] = df.duplicated().sum()
+    
+    # 3. Détection outliers (colonnes numériques)
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    for col in numeric_cols:
+        Q1 = df[col].quantile(0.25)
+        Q3 = df[col].quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+        
+        outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)]
+        if len(outliers) > 0:
+            report['outliers'][col] = {
+                'count': len(outliers),
+                'percentage': round((len(outliers) / len(df)) * 100, 2),
+                'lower_bound': round(lower_bound, 2),
+                'upper_bound': round(upper_bound, 2)
+            }
+    
+    # 4. Problèmes types de données
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            # Vérifier si colonne numérique cachée
+            try:
+                # Test conversion numérique
+                pd.to_numeric(df[col].dropna().head(10))
+                report['data_types'][col] = 'numeric_as_text'
+            except:
+                # Test dates
+                try:
+                    pd.to_datetime(df[col].dropna().head(10))
+                    report['data_types'][col] = 'date_as_text'
+                except:
+                    pass
+    
+    # 5. Colonnes vides ou quasi-vides
+    for col in df.columns:
+        non_null_percent = (df[col].count() / len(df)) * 100
+        if non_null_percent < 10:  # Moins de 10% de données
+            report['empty_columns'].append({
+                'column': col,
+                'fill_rate': round(non_null_percent, 2)
+            })
+    
+    # 6. Calcul score qualité
+    issues_found = (
+        len(report['missing_values']) + 
+        (1 if report['duplicates'] > 0 else 0) +
+        len(report['outliers']) +
+        len(report['data_types']) +
+        len(report['empty_columns'])
+    )
+    
+    report['total_issues'] = issues_found
+    report['quality_score'] = max(0, 100 - (issues_found * 15))  # -15 points par type de problème
+    
+    return report
+
+def display_quality_report(df, report):
+    """Affiche le rapport de qualité avec style"""
+    st.subheader("📊 Data Quality Report")
+    
+    # Score global avec couleur
+    score = report['quality_score']
+    if score >= 80:
+        score_color = "🟢"
+        score_status = "Excellent"
+    elif score >= 60:
+        score_color = "🟡"  
+        score_status = "Good"
+    elif score >= 40:
+        score_color = "🟠"
+        score_status = "Needs Improvement"
+    else:
+        score_color = "🔴"
+        score_status = "Poor"
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Quality Score", f"{score}/100", delta=score_status)
+        st.markdown(f"{score_color} **{score_status}**")
+    
+    with col2:
+        st.metric("Total Issues", report['total_issues'])
+    
+    with col3:
+        st.metric("Dataset Size", f"{len(df):,} rows")
+    
+    with col4:
+        memory_usage = df.memory_usage(deep=True).sum() / 1024**2
+        st.metric("Memory Usage", f"{memory_usage:.1f} MB")
+    
+    if report['total_issues'] == 0:
+        st.success("🎉 **Perfect!** Your data is clean and ready for analysis!")
+        return
+    
+    st.markdown("---")
+    
+    # Détails des problèmes
+    if report['missing_values']:
+        st.markdown("### 🚫 Missing Values Detected")
+        missing_df = pd.DataFrame([
+            {'Column': col, 'Missing Count': info['count'], 'Missing %': f"{info['percentage']}%"}
+            for col, info in report['missing_values'].items()
+        ])
+        st.dataframe(missing_df, hide_index=True)
+    
+    if report['duplicates'] > 0:
+        st.markdown(f"### 🔄 Duplicate Rows: **{report['duplicates']}** found")
+    
+    if report['outliers']:
+        st.markdown("### 🎯 Outliers Detected")
+        outlier_df = pd.DataFrame([
+            {'Column': col, 'Outliers': info['count'], 'Outliers %': f"{info['percentage']}%"}
+            for col, info in report['outliers'].items()
+        ])
+        st.dataframe(outlier_df, hide_index=True)
+    
+    if report['data_types']:
+        st.markdown("### 🔄 Data Type Issues")
+        for col, issue in report['data_types'].items():
+            if issue == 'numeric_as_text':
+                st.info(f"📊 Column **{col}** contains numbers stored as text")
+            elif issue == 'date_as_text':
+                st.info(f"📅 Column **{col}** contains dates stored as text")
+    
+    if report['empty_columns']:
+        st.markdown("### 🗑️ Nearly Empty Columns")
+        empty_df = pd.DataFrame(report['empty_columns'])
+        st.dataframe(empty_df, hide_index=True)
+
+def display_cleaning_actions(df, report):
+    """Interface d'actions de nettoyage avec boutons"""
+    st.subheader("🛠️ Data Cleaning Actions")
+    
+    if report['total_issues'] == 0:
+        st.info("✨ No cleaning actions needed - your data is already clean!")
+        return df
+    
+    st.markdown("**Select which cleaning actions to apply:**")
+    
+    # Actions sélectionnables
+    actions_to_apply = []
+    cleaned_df = df.copy()
+    
+    # Section 1: Valeurs manquantes
+    if report['missing_values']:
+        st.markdown("#### 🚫 Missing Values Actions")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Numeric Columns:**")
+            numeric_missing = [col for col in report['missing_values'].keys() 
+                             if df[col].dtype in ['int64', 'float64']]
+            
+            for col in numeric_missing:
+                missing_info = report['missing_values'][col]
+                with st.expander(f"📊 {col} ({missing_info['count']} missing values)"):
+                    
+                    action = st.radio(
+                        f"How to handle missing values in {col}?",
+                        ["Keep as is", "Fill with Mean", "Fill with Median", "Remove rows"],
+                        key=f"missing_{col}",
+                        help=f"{missing_info['percentage']}% of data is missing"
+                    )
+                    
+                    if action != "Keep as is":
+                        actions_to_apply.append({
+                            'type': 'missing_numeric',
+                            'column': col,
+                            'action': action,
+                            'affected_rows': missing_info['count']
+                        })
+        
+        with col2:
+            st.markdown("**Text Columns:**")
+            text_missing = [col for col in report['missing_values'].keys() 
+                           if df[col].dtype == 'object']
+            
+            for col in text_missing:
+                missing_info = report['missing_values'][col]
+                with st.expander(f"📝 {col} ({missing_info['count']} missing values)"):
+                    
+                    action = st.radio(
+                        f"How to handle missing values in {col}?",
+                        ["Keep as is", "Fill with Most Common", "Fill with 'Unknown'", "Remove rows"],
+                        key=f"missing_text_{col}",
+                        help=f"{missing_info['percentage']}% of data is missing"
+                    )
+                    
+                    if action != "Keep as is":
+                        actions_to_apply.append({
+                            'type': 'missing_text',
+                            'column': col,
+                            'action': action,
+                            'affected_rows': missing_info['count']
+                        })
+    
+    # Section 2: Doublons
+    if report['duplicates'] > 0:
+        st.markdown("#### 🔄 Duplicate Rows Actions")
+        with st.expander(f"🔄 Remove {report['duplicates']} duplicate rows"):
+            duplicate_action = st.radio(
+                "How to handle duplicate rows?",
+                ["Keep as is", "Remove duplicates (keep first)", "Remove duplicates (keep last)"],
+                key="duplicates_action"
+            )
+            
+            if duplicate_action != "Keep as is":
+                actions_to_apply.append({
+                    'type': 'duplicates',
+                    'action': duplicate_action,
+                    'affected_rows': report['duplicates']
+                })
+    
+    # Section 3: Outliers
+    if report['outliers']:
+        st.markdown("#### 🎯 Outliers Actions")
+        
+        for col, outlier_info in report['outliers'].items():
+            with st.expander(f"🎯 {col} ({outlier_info['count']} outliers)"):
+                st.info(f"Normal range: {outlier_info['lower_bound']} to {outlier_info['upper_bound']}")
+                
+                outlier_action = st.radio(
+                    f"How to handle outliers in {col}?",
+                    ["Keep as is", "Remove outlier rows", "Cap to normal range"],
+                    key=f"outlier_{col}",
+                    help=f"{outlier_info['percentage']}% of data are outliers"
+                )
+                
+                if outlier_action != "Keep as is":
+                    actions_to_apply.append({
+                        'type': 'outliers',
+                        'column': col,
+                        'action': outlier_action,
+                        'affected_rows': outlier_info['count'],
+                        'bounds': (outlier_info['lower_bound'], outlier_info['upper_bound'])
+                    })
+    
+    # Section 4: Types de données
+    if report['data_types']:
+        st.markdown("#### 🔄 Data Type Conversions")
+        
+        for col, issue_type in report['data_types'].items():
+            with st.expander(f"🔄 Convert {col} data type"):
+                if issue_type == 'numeric_as_text':
+                    convert_numeric = st.checkbox(
+                        f"Convert {col} to numeric",
+                        key=f"convert_numeric_{col}",
+                        help="This will convert text numbers to actual numbers for calculations"
+                    )
+                    if convert_numeric:
+                        actions_to_apply.append({
+                            'type': 'convert_numeric',
+                            'column': col
+                        })
+                
+                elif issue_type == 'date_as_text':
+                    convert_date = st.checkbox(
+                        f"Convert {col} to date format",
+                        key=f"convert_date_{col}",
+                        help="This will convert text dates to proper date format"
+                    )
+                    if convert_date:
+                        actions_to_apply.append({
+                            'type': 'convert_date',
+                            'column': col
+                        })
+    
+    # Section 5: Colonnes vides
+    if report['empty_columns']:
+        st.markdown("#### 🗑️ Empty Columns Actions")
+        
+        for empty_col in report['empty_columns']:
+            col_name = empty_col['column']
+            fill_rate = empty_col['fill_rate']
+            
+            with st.expander(f"🗑️ {col_name} ({fill_rate}% filled)"):
+                drop_column = st.checkbox(
+                    f"Remove column {col_name}",
+                    key=f"drop_{col_name}",
+                    help=f"This column has very little data ({fill_rate}% filled)"
+                )
+                if drop_column:
+                    actions_to_apply.append({
+                        'type': 'drop_column',
+                        'column': col_name
+                    })
+    
+    # Bouton d'application avec preview
+    if actions_to_apply:
+        st.markdown("---")
+        st.markdown("### 📋 Actions Summary")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Actions to apply:**")
+            for i, action in enumerate(actions_to_apply, 1):
+                if action['type'] == 'missing_numeric':
+                    st.markdown(f"{i}. Fill missing {action['column']} with {action['action'].lower()}")
+                elif action['type'] == 'missing_text':
+                    st.markdown(f"{i}. Handle missing {action['column']}: {action['action']}")
+                elif action['type'] == 'duplicates':
+                    st.markdown(f"{i}. Remove {action['affected_rows']} duplicate rows")
+                elif action['type'] == 'outliers':
+                    st.markdown(f"{i}. {action['action']} in {action['column']}")
+                elif action['type'] == 'convert_numeric':
+                    st.markdown(f"{i}. Convert {action['column']} to numeric")
+                elif action['type'] == 'convert_date':
+                    st.markdown(f"{i}. Convert {action['column']} to date")
+                elif action['type'] == 'drop_column':
+                    st.markdown(f"{i}. Remove column {action['column']}")
+        
+        with col2:
+            st.markdown("**Impact:**")
+            total_affected = sum(action.get('affected_rows', 0) for action in actions_to_apply)
+            st.info(f"📊 Approximately {total_affected} data points will be affected")
+            
+            original_shape = df.shape
+            st.markdown(f"**Original:** {original_shape[0]} rows × {original_shape[1]} columns")
+        
+        # Boutons d'action
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("🔍 Preview Changes", type="secondary", use_container_width=True):
+                st.session_state.preview_cleaning = True
+        
+        with col2:
+            if st.button("🧹 Apply All Changes", type="primary", use_container_width=True):
+                cleaned_df = apply_cleaning_actions(df, actions_to_apply)
+                st.session_state.cleaned_data = cleaned_df
+                st.session_state.original_data = df
+                st.session_state.cleaning_applied = True
+                st.success("✅ Data cleaning applied successfully!")
+                st.rerun()
+        
+        with col3:
+            if st.button("↩️ Reset All", use_container_width=True):
+                st.session_state.cleaned_data = None
+                st.session_state.cleaning_applied = False
+                st.rerun()
+    
+    return cleaned_df
+
+def apply_cleaning_actions(df, actions):
+    """Applique les actions de nettoyage sélectionnées"""
+    cleaned_df = df.copy()
+    
+    for action in actions:
+        try:
+            if action['type'] == 'missing_numeric':
+                if action['action'] == "Fill with Mean":
+                    cleaned_df[action['column']] = cleaned_df[action['column']].fillna(
+                        cleaned_df[action['column']].mean()
+                    )
+                elif action['action'] == "Fill with Median":
+                    cleaned_df[action['column']] = cleaned_df[action['column']].fillna(
+                        cleaned_df[action['column']].median()
+                    )
+                elif action['action'] == "Remove rows":
+                    cleaned_df = cleaned_df.dropna(subset=[action['column']])
+            
+            elif action['type'] == 'missing_text':
+                if action['action'] == "Fill with Most Common":
+                    mode_value = cleaned_df[action['column']].mode()[0] if len(cleaned_df[action['column']].mode()) > 0 else 'Unknown'
+                    cleaned_df[action['column']] = cleaned_df[action['column']].fillna(mode_value)
+                elif action['action'] == "Fill with 'Unknown'":
+                    cleaned_df[action['column']] = cleaned_df[action['column']].fillna('Unknown')
+                elif action['action'] == "Remove rows":
+                    cleaned_df = cleaned_df.dropna(subset=[action['column']])
+            
+            elif action['type'] == 'duplicates':
+                if "keep first" in action['action']:
+                    cleaned_df = cleaned_df.drop_duplicates(keep='first')
+                elif "keep last" in action['action']:
+                    cleaned_df = cleaned_df.drop_duplicates(keep='last')
+            
+            elif action['type'] == 'outliers':
+                col = action['column']
+                lower_bound, upper_bound = action['bounds']
+                
+                if action['action'] == "Remove outlier rows":
+                    cleaned_df = cleaned_df[
+                        (cleaned_df[col] >= lower_bound) & (cleaned_df[col] <= upper_bound)
+                    ]
+                elif action['action'] == "Cap to normal range":
+                    cleaned_df[col] = cleaned_df[col].clip(lower=lower_bound, upper=upper_bound)
+            
+            elif action['type'] == 'convert_numeric':
+                cleaned_df[action['column']] = pd.to_numeric(
+                    cleaned_df[action['column']], errors='coerce'
+                )
+            
+            elif action['type'] == 'convert_date':
+                cleaned_df[action['column']] = pd.to_datetime(
+                    cleaned_df[action['column']], errors='coerce'
+                )
+            
+            elif action['type'] == 'drop_column':
+                cleaned_df = cleaned_df.drop(columns=[action['column']])
+        
+        except Exception as e:
+            st.error(f"❌ Error applying {action['type']} to {action.get('column', 'data')}: {str(e)}")
+    
+    return cleaned_df
+
+def display_before_after_comparison(original_df, cleaned_df):
+    """Affiche la comparaison avant/après nettoyage"""
+    st.subheader("📈 Before vs After Comparison")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 📊 Original Data")
+        st.info(f"**Shape:** {original_df.shape[0]} rows × {original_df.shape[1]} columns")
+        
+        original_missing = original_df.isnull().sum().sum()
+        original_duplicates = original_df.duplicated().sum()
+        
+        st.markdown(f"**Missing values:** {original_missing}")
+        st.markdown(f"**Duplicate rows:** {original_duplicates}")
+        st.markdown(f"**Memory usage:** {original_df.memory_usage(deep=True).sum() / 1024**2:.1f} MB")
+    
+    with col2:
+        st.markdown("#### ✨ Cleaned Data")
+        st.success(f"**Shape:** {cleaned_df.shape[0]} rows × {cleaned_df.shape[1]} columns")
+        
+        cleaned_missing = cleaned_df.isnull().sum().sum()
+        cleaned_duplicates = cleaned_df.duplicated().sum()
+        
+        st.markdown(f"**Missing values:** {cleaned_missing}")
+        st.markdown(f"**Duplicate rows:** {cleaned_duplicates}")
+        st.markdown(f"**Memory usage:** {cleaned_df.memory_usage(deep=True).sum() / 1024**2:.1f} MB")
+    
+    # Changements
+    st.markdown("#### 📋 Summary of Changes")
+    rows_removed = original_df.shape[0] - cleaned_df.shape[0]
+    cols_removed = original_df.shape[1] - cleaned_df.shape[1]
+    missing_fixed = original_missing - cleaned_missing
+    
+    change_metrics = []
+    if rows_removed > 0:
+        change_metrics.append(f"🗑️ Removed {rows_removed} rows")
+    if cols_removed > 0:
+        change_metrics.append(f"🗑️ Removed {cols_removed} columns")
+    if missing_fixed > 0:
+        change_metrics.append(f"✅ Fixed {missing_fixed} missing values")
+    if original_duplicates > cleaned_duplicates:
+        change_metrics.append(f"✅ Removed {original_duplicates - cleaned_duplicates} duplicates")
+    
+    if change_metrics:
+        for metric in change_metrics:
+            st.markdown(f"- {metric}")
+    else:
+        st.info("No structural changes made to the dataset")
+    
+    # Boutons d'export
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        csv_cleaned = cleaned_df.to_csv(index=False)
+        st.download_button(
+            label="📥 Download Cleaned Data (CSV)",
+            data=csv_cleaned,
+            file_name=f"cleaned_data_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    
+    with col2:
+        if st.button("🔄 Use Cleaned Data for Analysis", type="primary", use_container_width=True):
+            st.session_state.processed_data = cleaned_df
+            st.session_state.data_source = f"Cleaned Data ({original_df.shape[0]}→{cleaned_df.shape[0]} rows)"
+            st.success("✅ Switched to cleaned data for analysis!")
+            st.rerun()
+
 def load_file_data(uploaded_file):
     """Charge données depuis fichier uploadé"""
     try:
@@ -596,8 +1344,11 @@ def process_data(df, source_name):
 
 
 
+# MODIFICATION DE LA FONCTION display_data_analysis dans votre main.py
+# Remplacez la section des TABS par cette version avec l'onglet Data Cleaning
+
 def display_data_analysis(df):
-    """Affiche l'analyse complète des données avec graphiques personnalisés"""
+    """Affiche l'analyse complète des données avec nettoyage"""
     
     # Success message avec info
     st.success(f"✅ Data processed: **{len(df)} rows** and **{len(df.columns)} columns**")
@@ -643,17 +1394,60 @@ def display_data_analysis(df):
     col_info_df = pd.DataFrame(col_info)
     st.dataframe(col_info_df, use_container_width=True)
     
-    # NOUVELLE SECTION - Tabs pour visualisations
+    # TABS AVEC DATA CLEANING
     st.markdown("---")
-    st.subheader("4. 📊 Data Visualizations")
+    st.subheader("4. 📊 Data Analysis & Processing")
     
-    # Tabs pour différents types de visualisations
-    tab1, tab2, tab3, tab4 = st.tabs(["🤖 Auto Charts", "🎨 Custom Builder", "🖼️ Gallery", "💡 Suggestions"])
+    # Tabs avec Data Cleaning ajouté
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🧹 Data Cleaning", "🤖 Auto Charts", "🎨 Custom Builder", "🖼️ Gallery", "💡 Suggestions"])
     
     with tab1:
+        # Section Data Cleaning
+        st.markdown("**Clean and optimize your data for better analysis**")
+        
+        # Vérifier si on a déjà des données nettoyées
+        if st.session_state.get('cleaning_applied', False) and st.session_state.get('cleaned_data') is not None:
+            # Afficher comparaison avant/après
+            display_before_after_comparison(st.session_state.get('original_data', df), st.session_state.get('cleaned_data'))
+            
+            # Option pour recommencer le nettoyage
+            if st.button("🔄 Start New Cleaning Process"):
+                st.session_state.cleaning_applied = False
+                st.session_state.cleaned_data = None
+                st.rerun()
+        
+        else:
+            # Processus de nettoyage normal
+            
+            # Analyse automatique de la qualité
+            with st.spinner("🔍 Analyzing data quality..."):
+                quality_report = analyze_data_quality(df)
+            
+            # Affichage du rapport de qualité
+            display_quality_report(df, quality_report)
+            
+            # Actions de nettoyage si nécessaire
+            if quality_report['total_issues'] > 0:
+                st.markdown("---")
+                cleaned_df = display_cleaning_actions(df, quality_report)
+            else:
+                st.markdown("---")
+                st.success("🎉 **Great!** Your data is already clean and ready for analysis.")
+                
+                # Bouton pour forcer l'analyse si l'utilisateur veut voir les détails
+                if st.button("🔍 Show Detailed Analysis Anyway"):
+                    st.info("Even clean data can benefit from optimization. Here are some advanced options:")
+                    display_cleaning_actions(df, quality_report)
+    
+    with tab2:
         st.markdown("**Automatic visualizations based on your data:**")
         
-        # Graphiques automatiques existants
+        # Utiliser données nettoyées si disponibles
+        analysis_df = st.session_state.get('cleaned_data', df) if st.session_state.get('cleaning_applied', False) else df
+        
+        # Graphiques automatiques existants (code existant)
+        numeric_cols = analysis_df.select_dtypes(include=[np.number]).columns
+        
         if len(numeric_cols) > 0:
             first_numeric = numeric_cols[0]
             
@@ -662,29 +1456,29 @@ def display_data_analysis(df):
             with col1:
                 st.markdown(f"**Distribution: {first_numeric}**")
                 fig1 = px.histogram(
-                    df, 
+                    analysis_df, 
                     x=first_numeric,
                     title=f"Distribution of {first_numeric}",
                     nbins=20
                 )
                 fig1.update_layout(height=400)
-                st.plotly_chart(fig1, use_container_width=True)
+                st.plotly_chart(fig1, use_container_width=True, key="auto_hist")
             
             with col2:
                 st.markdown(f"**Box Plot: {first_numeric}**")
                 fig2 = px.box(
-                    df,
+                    analysis_df,
                     y=first_numeric,
                     title=f"Box Plot of {first_numeric}"
                 )
                 fig2.update_layout(height=400)
-                st.plotly_chart(fig2, use_container_width=True)
+                st.plotly_chart(fig2, use_container_width=True, key="auto_box")
             
             # Matrice de corrélation
             if len(numeric_cols) > 1:
                 st.markdown("**Correlation Matrix**")
                 
-                corr_matrix = df[numeric_cols].corr()
+                corr_matrix = analysis_df[numeric_cols].corr()
                 
                 fig3 = px.imshow(
                     corr_matrix,
@@ -692,7 +1486,7 @@ def display_data_analysis(df):
                     aspect="auto",
                     color_continuous_scale="RdBu_r"
                 )
-                st.plotly_chart(fig3, use_container_width=True)
+                st.plotly_chart(fig3, use_container_width=True, key="auto_corr")
                 
                 # Corrélations fortes
                 strong_corr = []
@@ -714,11 +1508,11 @@ def display_data_analysis(df):
             
             # Analyse temporelle
             date_columns = []
-            for col in df.columns:
-                if 'date' in col.lower() or 'time' in col.lower() or df[col].dtype == 'datetime64[ns]':
+            for col in analysis_df.columns:
+                if 'date' in col.lower() or 'time' in col.lower() or analysis_df[col].dtype == 'datetime64[ns]':
                     try:
-                        if df[col].dtype != 'datetime64[ns]':
-                            pd.to_datetime(df[col])
+                        if analysis_df[col].dtype != 'datetime64[ns]':
+                            pd.to_datetime(analysis_df[col])
                         date_columns.append(col)
                     except:
                         pass
@@ -727,12 +1521,12 @@ def display_data_analysis(df):
                 st.markdown("**📅 Time Series Analysis**")
                 date_col = date_columns[0]
                 
-                df_time = df.copy()
-                if df_time[date_col].dtype != 'datetime64[ns]':
-                    df_time[date_col] = pd.to_datetime(df_time[date_col])
+                analysis_df_time = analysis_df.copy()
+                if analysis_df_time[date_col].dtype != 'datetime64[ns]':
+                    analysis_df_time[date_col] = pd.to_datetime(analysis_df_time[date_col])
                 
                 # Agrégation par date
-                time_series = df_time.groupby(df_time[date_col].dt.date)[first_numeric].sum().reset_index()
+                time_series = analysis_df_time.groupby(analysis_df_time[date_col].dt.date)[first_numeric].sum().reset_index()
                 
                 fig4 = px.line(
                     time_series,
@@ -740,37 +1534,48 @@ def display_data_analysis(df):
                     y=first_numeric,
                     title=f"Time Series: {first_numeric} over {date_col}"
                 )
-                st.plotly_chart(fig4, use_container_width=True)
+                st.plotly_chart(fig4, use_container_width=True, key="auto_time")
         else:
             st.info("No numeric columns found for automatic visualizations.")
     
-    with tab2:
-        # Interface de construction de graphiques personnalisés
-        display_chart_builder(df)
-    
     with tab3:
-        # Galerie des graphiques créés
-        display_chart_gallery(df)
+        # Custom Builder avec données nettoyées
+        analysis_df = st.session_state.get('cleaned_data', df) if st.session_state.get('cleaning_applied', False) else df
+        display_chart_builder(analysis_df)
     
     with tab4:
-        # Suggestions de graphiques
-        suggest_chart_ideas(df)
+        # Gallery avec données nettoyées  
+        analysis_df = st.session_state.get('cleaned_data', df) if st.session_state.get('cleaning_applied', False) else df
+        display_chart_gallery(analysis_df)
+    
+    with tab5:
+        # Suggestions avec données nettoyées
+        analysis_df = st.session_state.get('cleaned_data', df) if st.session_state.get('cleaning_applied', False) else df
+        suggest_chart_ideas(analysis_df)
     
     # Insights intelligents (reste identique)
     st.markdown("---")
     st.subheader("5. 🧠 Smart Insights")
     
+    # Utiliser données nettoyées pour insights si disponibles
+    insight_df = st.session_state.get('cleaned_data', df) if st.session_state.get('cleaning_applied', False) else df
+    numeric_cols = insight_df.select_dtypes(include=[np.number]).columns
+    
     insights = []
     
     # Complétude des données
-    completeness = (1 - df.isnull().sum().sum() / (len(df) * len(df.columns))) * 100
+    completeness = (1 - insight_df.isnull().sum().sum() / (len(insight_df) * len(insight_df.columns))) * 100
     insights.append(f"📊 Data is **{completeness:.1f}% complete** - {'Excellent!' if completeness > 95 else 'Good!' if completeness > 80 else 'Consider cleaning missing values'}")
+    
+    # Message si données nettoyées utilisées
+    if st.session_state.get('cleaning_applied', False):
+        insights.append("✨ **Using cleaned data** - Insights based on optimized dataset")
     
     # Analyse colonnes numériques
     if len(numeric_cols) > 0:
         high_variance_cols = []
         for col in numeric_cols:
-            cv = df[col].std() / df[col].mean() if df[col].mean() != 0 else 0
+            cv = insight_df[col].std() / insight_df[col].mean() if insight_df[col].mean() != 0 else 0
             if cv > 1:
                 high_variance_cols.append(col)
         
@@ -778,11 +1583,11 @@ def display_data_analysis(df):
             insights.append(f"📈 High variability in: **{', '.join(high_variance_cols)}** - Great for analysis!")
     
     # Analyse catégorielle
-    categorical_cols = df.select_dtypes(include=['object']).columns
+    categorical_cols = insight_df.select_dtypes(include=['object']).columns
     if len(categorical_cols) > 0:
         high_cardinality = []
         for col in categorical_cols:
-            if df[col].nunique() > len(df) * 0.8:
+            if insight_df[col].nunique() > len(insight_df) * 0.8:
                 high_cardinality.append(col)
         
         if high_cardinality:
@@ -790,8 +1595,8 @@ def display_data_analysis(df):
     
     # Potentiel temporel
     date_columns = []
-    for col in df.columns:
-        if 'date' in col.lower() or 'time' in col.lower() or df[col].dtype == 'datetime64[ns]':
+    for col in insight_df.columns:
+        if 'date' in col.lower() or 'time' in col.lower() or insight_df[col].dtype == 'datetime64[ns]':
             date_columns.append(col)
     
     if date_columns:
@@ -801,7 +1606,7 @@ def display_data_analysis(df):
     for insight in insights:
         st.markdown(f"- {insight}")
     
-    # Next steps (reste identique)
+    # Next steps (reste identique mais avec mention nettoyage)
     st.markdown("---")
     st.subheader("6. 🚀 Next Steps")
     
@@ -810,18 +1615,81 @@ def display_data_analysis(df):
     with col1:
         st.markdown("**🤖 AI Chat**")
         st.info("Ask questions about your data")
-        st.button("Coming Next!", disabled=True, key="chat_btn")
+        st.button("Coming Soon!", disabled=True, key="chat_btn")
     
     with col2:
         st.markdown("**🧠 Memory System**") 
         st.info("System remembers analyses")
-        st.button("Coming Next!", disabled=True, key="memory_btn")
+        st.button("Coming Soon!", disabled=True, key="memory_btn")
     
     with col3:
         st.markdown("**📄 Export Report**")
         st.info("Generate PDF reports")
-        st.button("Coming Next!", disabled=True, key="export_btn")
+        st.button("Coming Soon!", disabled=True, key="export_btn")
+    
+    # Note sur données nettoyées
+    if st.session_state.get('cleaning_applied', False):
+        st.success("✅ **Note:** All visualizations and insights are now using your cleaned data for better accuracy!")
 
+# AJOUT DANS LA SECTION SIDEBAR (trouvez cette section dans votre main.py et modifiez)
+def update_sidebar_info():
+    """Met à jour les infos sidebar avec statut nettoyage"""
+    with st.sidebar:
+        st.markdown("### 🚀 Features")
+        st.markdown("✅ Excel & CSV Upload")
+        st.markdown("✅ Data Cleaning System") 
+        st.markdown("✅ Sample Data Generator") 
+        st.markdown("✅ Auto Data Analysis") 
+        st.markdown("✅ Custom Chart Builder")
+        st.markdown("✅ Smart Visualizations")
+        st.markdown("🔄 AI Chat (Coming Soon)")
+        st.markdown("🧠 Memory System (Coming Soon)")
+        
+        st.markdown("---")
+        st.markdown("### 📊 Current Data Status")
+        
+        if st.session_state.processed_data is not None:
+            # Infos données principales
+            st.metric("Files Processed", st.session_state.upload_count)
+            st.info(f"Source: {st.session_state.data_source}")
+            st.metric("Rows", len(st.session_state.processed_data))
+            st.metric("Columns", len(st.session_state.processed_data.columns))
+            
+            # Statut nettoyage
+            if st.session_state.get('cleaning_applied', False):
+                cleaned_data = st.session_state.get('cleaned_data')
+                original_data = st.session_state.get('original_data')
+                
+                if cleaned_data is not None and original_data is not None:
+                    st.markdown("### 🧹 Cleaning Status")
+                    st.success("✅ Data Cleaned")
+                    
+                    rows_change = len(original_data) - len(cleaned_data)
+                    cols_change = len(original_data.columns) - len(cleaned_data.columns)
+                    
+                    if rows_change > 0:
+                        st.markdown(f"📉 Removed {rows_change} rows")
+                    if cols_change > 0:
+                        st.markdown(f"📉 Removed {cols_change} columns")
+                    
+                    missing_before = original_data.isnull().sum().sum()
+                    missing_after = cleaned_data.isnull().sum().sum()
+                    if missing_before > missing_after:
+                        st.markdown(f"✅ Fixed {missing_before - missing_after} missing values")
+        else:
+            st.metric("Files Processed", st.session_state.upload_count)
+
+# INITIALISATION SESSION STATE (ajoutez au début de votre main() function)
+def initialize_cleaning_session_state():
+    """Initialise les variables session pour le nettoyage"""
+    if 'cleaned_data' not in st.session_state:
+        st.session_state.cleaned_data = None
+    if 'original_data' not in st.session_state:
+        st.session_state.original_data = None
+    if 'cleaning_applied' not in st.session_state:
+        st.session_state.cleaning_applied = False
+    if 'preview_cleaning' not in st.session_state:
+        st.session_state.preview_cleaning = False
 
 # Interface principale
 st.subheader("1. 📁 Get Your Data")
@@ -845,26 +1713,7 @@ with tab1:
             df = process_data(df, source_name)
 
 with tab2:
-    st.markdown("**Generate sample data for testing:**")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("🛍️ Generate E-commerce Data", use_container_width=True):
-            with st.spinner("Generating e-commerce data..."):
-                df = generate_ecommerce_data()
-                df = process_data(df, "Generated E-commerce Dataset (90 days)")
-            st.success("✅ E-commerce data generated and loaded!")
-    
-    with col2:
-        if st.button("🏥 Generate Healthcare Data", use_container_width=True):
-            with st.spinner("Generating healthcare data..."):
-                df = generate_healthcare_data()
-                df = process_data(df, "Generated Healthcare Dataset (60 days)")
-            st.success("✅ Healthcare data generated and loaded!")
-    
-    st.markdown("---")
-    st.markdown("💡 **Tip:** Click either button above to instantly generate and analyze sample data!")
+    display_sample_data_generation()
 
 # Affichage de l'analyse si données disponibles
 if st.session_state.processed_data is not None:
